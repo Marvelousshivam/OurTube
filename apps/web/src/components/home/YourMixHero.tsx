@@ -45,7 +45,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
         justifyContent: 'center'
       }}
     >
-      {/* 1. Center Piece: Large Tilted Organic Pebble Artwork */}
+      {/* 1. Center Piece: Large Tilted Organic Pebble Artwork with Living Idle Drift */}
       <div
         onClick={() => onTrackClick?.(primaryTrack)}
         style={{
@@ -57,12 +57,21 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
           backgroundColor: 'var(--md-sys-color-surface-container-high)',
           boxShadow: '0 20px 48px -8px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))',
           cursor: 'pointer',
-          transition: 'transform 400ms cubic-bezier(0.2, 0.9, 0.3, 1)',
+          animation: 'm3HeroPebbleDrift 11s ease-in-out infinite alternate',
+          transition: 'transform 350ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms ease',
           position: 'relative',
           zIndex: 2
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = 'rotate(-8deg) scale(1.02)')}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = 'rotate(-12deg) scale(1)')}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.animationPlayState = 'paused';
+          e.currentTarget.style.transform = 'rotate(-8deg) scale(1.04)';
+          e.currentTarget.style.boxShadow = '0 28px 60px -8px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.32))';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.animationPlayState = 'running';
+          e.currentTarget.style.transform = '';
+          e.currentTarget.style.boxShadow = '0 20px 48px -8px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))';
+        }}
         title={primaryTrack.title}
       >
         <img
@@ -72,7 +81,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
         />
       </div>
 
-      {/* 2. Top-Left Floating Circular Satellite */}
+      {/* 2. Top-Left Floating Circular Satellite with Counter-Orbit */}
       <div
         onClick={() => onTrackClick?.(secondaryTrack)}
         style={{
@@ -88,10 +97,17 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
           border: '3px solid var(--md-sys-color-background)',
           cursor: 'pointer',
           zIndex: 3,
-          transition: 'transform 300ms ease'
+          animation: 'm3SatelliteOrbit1 7.5s ease-in-out infinite alternate',
+          transition: 'transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 250ms ease'
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08) translateY(-4px)')}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.animationPlayState = 'paused';
+          e.currentTarget.style.transform = 'scale(1.1) translateY(-6px)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.animationPlayState = 'running';
+          e.currentTarget.style.transform = '';
+        }}
         title={secondaryTrack.title}
       >
         <img
@@ -101,7 +117,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
         />
       </div>
 
-      {/* 3. Bottom-Right Floating Circular Satellite */}
+      {/* 3. Bottom-Right Floating Circular Satellite with Counter-Orbit */}
       <div
         onClick={() => onTrackClick?.(tertiaryTrack)}
         style={{
@@ -117,10 +133,17 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
           border: '3px solid var(--md-sys-color-background)',
           cursor: 'pointer',
           zIndex: 3,
-          transition: 'transform 300ms ease'
+          animation: 'm3SatelliteOrbit2 9s ease-in-out infinite alternate',
+          transition: 'transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 250ms ease'
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08) translateY(4px)')}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.animationPlayState = 'paused';
+          e.currentTarget.style.transform = 'scale(1.1) translateY(6px)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.animationPlayState = 'running';
+          e.currentTarget.style.transform = '';
+        }}
         title={tertiaryTrack.title}
       >
         <img
@@ -200,11 +223,19 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                     justifyContent: 'center',
                     cursor: 'pointer',
                     boxShadow: '0 8px 24px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))',
-                    transition: 'transform 150ms ease, box-shadow 150ms ease'
+                    transition: 'transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease, background-color 150ms ease'
                   }}
                   title="Play Your Mix"
-                  onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.94)')}
-                  onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'scale(1.08)';
+                    e.currentTarget.style.boxShadow = '0 14px 32px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.32))';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 8px 24px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))';
+                  }}
+                  onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
+                  onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
                 >
                   <span
                     className="material-symbols-rounded"
@@ -318,8 +349,11 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  boxShadow: '0 6px 18px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))'
+                  boxShadow: '0 6px 18px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))',
+                  transition: 'transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease'
                 }}
+                onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
+                onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
               >
                 <span
                   className="material-symbols-rounded"

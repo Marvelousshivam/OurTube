@@ -271,6 +271,9 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
                   return (
                     <DSTrackRow
                       key={`${track.id}-${idx}`}
+                      style={{
+                        animation: `m3CardCascade 320ms var(--m3-ease-emphasized-decelerate) ${Math.min(idx * 25, 300)}ms both`
+                      }}
                       rank={idx + 1}
                       title={track.title}
                       artist={track.artist}
@@ -305,10 +308,11 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
                   gap: '16px'
                 }}
               >
-                {details.albums.map((album) => (
+                {details.albums.map((album, aIdx) => (
                   <MediaCard
                     key={album.id}
                     id={album.id}
+                    index={aIdx}
                     title={album.title}
                     subtitle={album.year ? `${album.year} • Album` : 'Album'}
                     imageUrl={album.imageUrl || ''}

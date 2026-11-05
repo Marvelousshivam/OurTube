@@ -13,6 +13,7 @@ export interface MediaCardProps {
   badge?: string;
   className?: string;
   style?: React.CSSProperties;
+  index?: number;
 }
 
 export const MediaCard: React.FC<MediaCardProps> = ({
@@ -23,7 +24,8 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   onPlay,
   onClick,
   badge,
-  style
+  style,
+  index
 }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   const highResUrl = React.useMemo(() => sizedArtwork(imageUrl, 300), [imageUrl]);
@@ -46,8 +48,11 @@ export const MediaCard: React.FC<MediaCardProps> = ({
         cursor: 'pointer',
         position: 'relative',
         transform: isHovered ? 'translateY(-4px)' : 'translateY(0)',
-        transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 150ms ease, box-shadow 200ms ease',
+        transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms ease, box-shadow 220ms ease',
         userSelect: 'none',
+        animation: typeof index === 'number'
+          ? `m3CardCascade 340ms var(--m3-ease-emphasized-decelerate) ${Math.min(index * 35, 350)}ms both`
+          : undefined,
         ...style
       }}
       onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.97) translateY(-2px)')}

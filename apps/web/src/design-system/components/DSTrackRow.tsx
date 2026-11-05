@@ -51,15 +51,21 @@ export const DSTrackRow: React.FC<DSTrackRowProps> = ({
         borderRadius: '16px',
         cursor: 'pointer',
         backgroundColor: isPlaying ? COLOR_TOKENS.surfaceContainerHigh : 'transparent',
-        transition: 'background-color 150ms ease, transform 120ms cubic-bezier(0.2, 0, 0, 1)',
+        transition: 'background-color 150ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
         userSelect: 'none',
         ...style
       }}
       onMouseEnter={(e) => {
-        if (!isPlaying) e.currentTarget.style.backgroundColor = COLOR_TOKENS.surfaceContainerLow;
+        if (!isPlaying) {
+          e.currentTarget.style.backgroundColor = COLOR_TOKENS.surfaceContainerLow;
+          e.currentTarget.style.transform = 'translateX(3px)';
+        }
       }}
       onMouseLeave={(e) => {
-        if (!isPlaying) e.currentTarget.style.backgroundColor = 'transparent';
+        if (!isPlaying) {
+          e.currentTarget.style.backgroundColor = 'transparent';
+          e.currentTarget.style.transform = 'translateX(0)';
+        }
       }}
     >
       {/* Rank or Visualizer */}
@@ -76,9 +82,55 @@ export const DSTrackRow: React.FC<DSTrackRowProps> = ({
           }}
         >
           {isPlaying ? (
-            <span className="material-symbols-rounded filled" style={{ fontSize: '18px', animation: 'pulse 1s infinite' }}>
-              equalizer
-            </span>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                gap: '2px',
+                width: '16px',
+                height: '14px',
+                margin: '0 auto'
+              }}
+              title="Playing"
+            >
+              <span
+                style={{
+                  width: '2.5px',
+                  height: '100%',
+                  backgroundColor: COLOR_TOKENS.primary,
+                  borderRadius: '9999px',
+                  animation: 'm3EqualizerBar1 0.75s ease-in-out infinite'
+                }}
+              />
+              <span
+                style={{
+                  width: '2.5px',
+                  height: '100%',
+                  backgroundColor: COLOR_TOKENS.primary,
+                  borderRadius: '9999px',
+                  animation: 'm3EqualizerBar2 0.55s ease-in-out infinite 0.1s'
+                }}
+              />
+              <span
+                style={{
+                  width: '2.5px',
+                  height: '100%',
+                  backgroundColor: COLOR_TOKENS.primary,
+                  borderRadius: '9999px',
+                  animation: 'm3EqualizerBar3 0.85s ease-in-out infinite 0.2s'
+                }}
+              />
+              <span
+                style={{
+                  width: '2.5px',
+                  height: '100%',
+                  backgroundColor: COLOR_TOKENS.primary,
+                  borderRadius: '9999px',
+                  animation: 'm3EqualizerBar4 0.65s ease-in-out infinite 0.05s'
+                }}
+              />
+            </div>
           ) : (
             rank
           )}
@@ -202,10 +254,20 @@ export const DSTrackRow: React.FC<DSTrackRowProps> = ({
               color: isLiked ? COLOR_TOKENS.primary : COLOR_TOKENS.outline,
               padding: '6px',
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'center',
+              transition: 'transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), color 150ms ease'
             }}
+            onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.82)')}
+            onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+            title={isLiked ? 'Unlike track' : 'Like track'}
           >
-            <span className={`material-symbols-rounded ${isLiked ? 'filled' : ''}`} style={{ fontSize: '18px' }}>
+            <span
+              className={`material-symbols-rounded ${isLiked ? 'filled' : ''}`}
+              style={{
+                fontSize: '18px',
+                animation: isLiked ? 'm3HeartBurst 400ms var(--motion-spring-joyful)' : 'none'
+              }}
+            >
               favorite
             </span>
           </button>

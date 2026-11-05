@@ -323,16 +323,18 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onOpenPlaylist, onOpenAr
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                transition: 'all 150ms ease'
+                transition: 'all 200ms cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
               title="Clear search"
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
                 e.currentTarget.style.color = 'var(--md-sys-color-on-surface)';
+                e.currentTarget.style.transform = 'rotate(90deg) scale(1.1)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
                 e.currentTarget.style.color = 'var(--md-sys-color-on-surface-variant)';
+                e.currentTarget.style.transform = 'rotate(0deg) scale(1)';
               }}
             >
               <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
@@ -875,6 +877,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onOpenPlaylist, onOpenAr
                   return (
                     <DSTrackRow
                       key={`${track.id}-${idx}`}
+                      style={{
+                        animation: `m3CardCascade 320ms var(--m3-ease-emphasized-decelerate) ${Math.min(idx * 25, 300)}ms both`
+                      }}
                       title={track.title}
                       artist={track.artist}
                       album={track.album}

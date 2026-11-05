@@ -243,16 +243,22 @@ export const AppLayout: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  transition: 'all 150ms cubic-bezier(0.2, 0, 0, 1)'
+                  transition: 'transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 150ms ease'
                 }}
                 title="Go Back"
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
-                  e.currentTarget.style.transform = 'scale(1.05)';
+                  e.currentTarget.style.transform = 'scale(1.06)';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)';
                   e.currentTarget.style.transform = 'scale(1)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.92)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.06)';
                 }}
               >
                 <span className="material-symbols-rounded" style={{ fontSize: '22px' }}>
@@ -260,7 +266,15 @@ export const AppLayout: React.FC = () => {
                 </span>
               </button>
 
-              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div
+                key={(viewingArtist ? viewingArtist.name : viewingPlaylist ? viewingPlaylist.id : currentTab) + '-title'}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 0,
+                  animation: 'm3TextSlideUp 260ms var(--m3-ease-emphasized-decelerate) both'
+                }}
+              >
                 <span
                   style={{
                     fontSize: '15px',
@@ -360,8 +374,25 @@ export const AppLayout: React.FC = () => {
           </div>
         </header>
 
-        {/* Viewport Dynamic Content */}
-        <div style={{ flex: 1, width: '100%', maxWidth: '1440px', margin: '0 auto' }}>
+        {/* Viewport Dynamic Content with Material 3 Expressive View Transitions */}
+        <div
+          key={
+            viewingArtist
+              ? `artist-${viewingArtist.name}`
+              : viewingPlaylist
+              ? `playlist-${viewingPlaylist.id}`
+              : currentTab
+          }
+          style={{
+            flex: 1,
+            width: '100%',
+            maxWidth: '1440px',
+            margin: '0 auto',
+            animation: isSubView
+              ? 'm3SubViewEnter 340ms var(--m3-ease-emphasized-decelerate) both'
+              : 'm3PageViewEnter 280ms var(--m3-ease-emphasized-decelerate) both'
+          }}
+        >
           {currentTab === 'settings' ? (
             <SettingsPage onBack={() => handleSelectTab(previousTab || 'home')} />
           ) : viewingArtist ? (

@@ -20,8 +20,10 @@ export const SonicWaveformScrubber: React.FC<SonicWaveformScrubberProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragFraction, setDragFraction] = useState<number | null>(null);
+  const [hoverFraction, setHoverFraction] = useState<number | null>(null);
 
   const progress = duration > 0 ? (isDragging && dragFraction !== null ? dragFraction : Math.min(1, currentTime / duration)) : 0;
+  const activeFraction = isDragging && dragFraction !== null ? dragFraction : hoverFraction;
 
   // Generate pseudo-deterministic, organic waveform bar heights for the track
   const barHeights = useMemo(() => {
@@ -56,9 +58,12 @@ export const SonicWaveformScrubber: React.FC<SonicWaveformScrubberProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging) return;
     const frac = calculateFraction(e.clientX);
-    setDragFraction(frac);
+    if (isDragging) {
+      setDragFraction(frac);
+    } else {
+      setHoverFraction(frac);
+    }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -109,6 +114,9 @@ export const SonicWaveformScrubber: React.FC<SonicWaveformScrubberProps> = ({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerLeave={() => {
+          if (!isDragging) setHoverFraction(null);
+        }}
         style={{
           flex: 1,
           height: '52px',
@@ -120,39 +128,50 @@ export const SonicWaveformScrubber: React.FC<SonicWaveformScrubberProps> = ({
           padding: '4px 0'
         }}
       >
-        {/* Vertical Waveform Bars */}
+        {/* Vertical Waveform Bars with Liquid Proximity Wave */}
         {barHeights.map((h, i) => {
           const barFraction = i / (barHeights.length - 1);
           const isPlayed = barFraction <= progress;
+
+          // Liquid magnetic proximity wave under the finger/cursor
+          const dist = activeFraction !== null ? Math.abs(barFraction - activeFraction) : 1;
+          const proximityBoost = activeFraction !== null && dist < 0.12 ? (1 - dist / 0.12) * 0.42 : 0;
+          const computedHeight = Math.min(48, Math.round(h * 38 * (1 + proximityBoost)));
 
           return (
             <div
               key={i}
               style={{
                 width: '3.5px',
-                height: `${Math.round(h * 38)}px`,
+                height: `${computedHeight}px`,
                 borderRadius: '9999px',
                 backgroundColor: accentColor,
-                opacity: isPlayed ? 1 : 0.28,
-                transition: isDragging ? 'none' : 'opacity 150ms ease, height 300ms ease'
+                opacity: isPlayed ? 1 : proximityBoost > 0 ? 0.6 : 0.28,
+                transition: isDragging
+                  ? 'none'
+                  : 'opacity 150ms ease, height 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+                transform: proximityBoost > 0 ? 'scaleX(1.15)' : 'scaleX(1)'
               }}
             />
           );
         })}
 
-        {/* Playhead Vertical Cursor Line */}
+        {/* Playhead Vertical Cursor Line with Spring Glow */}
         <div
           style={{
             position: 'absolute',
             left: `${progress * 100}%`,
-            top: '4px',
-            bottom: '4px',
-            width: '2px',
+            top: '2px',
+            bottom: '2px',
+            width: isDragging ? '3px' : '2px',
             backgroundColor: accentColor,
             borderRadius: '9999px',
-            boxShadow: '0 0 8px currentColor',
+            boxShadow: isDragging
+              ? '0 0 14px currentColor, 0 0 4px #ffffff'
+              : '0 0 8px currentColor',
             transform: 'translateX(-50%)',
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            transition: 'width 150ms ease, box-shadow 150ms ease'
           }}
         />
       </div>

@@ -302,7 +302,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               padding: '0 4px 8px 4px'
             }}
           >
-            {recentlyPlayed.map((track) => {
+            {recentlyPlayed.map((track, rIdx) => {
               const isThisPlaying = currentTrack?.id === track.id && isPlaying;
               return (
                 <div
@@ -316,10 +316,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                     gap: '10px',
                     cursor: 'pointer',
                     userSelect: 'none',
-                    transition: 'transform 180ms ease'
+                    animation: `m3CardCascade 340ms var(--m3-ease-emphasized-decelerate) ${Math.min(rIdx * 35, 350)}ms both`,
+                    transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)'
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0) scale(1)')}
                 >
                   {/* Artwork Container */}
                   <div
@@ -345,27 +346,24 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                       }}
                     />
 
-                    {/* Active playing indicator or play overlay */}
+                    {/* Active playing indicator with live 4-bar equalizer wave */}
                     {isThisPlaying && (
                       <div
                         style={{
                           position: 'absolute',
                           inset: 0,
-                          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                          backgroundColor: 'rgba(0,0,0,0.5)',
                           display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
+                          alignItems: 'flex-end',
+                          justifyContent: 'center',
+                          paddingBottom: '16px',
+                          gap: '3px'
                         }}
                       >
-                        <span
-                          className="material-symbols-rounded"
-                          style={{
-                            fontSize: '32px',
-                            color: 'var(--md-sys-color-primary, #ffffff)'
-                          }}
-                        >
-                          equalizer
-                        </span>
+                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar1 0.75s ease-in-out infinite' }} />
+                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar2 0.55s ease-in-out infinite 0.1s' }} />
+                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar3 0.85s ease-in-out infinite 0.2s' }} />
+                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar4 0.65s ease-in-out infinite 0.05s' }} />
                       </div>
                     )}
                   </div>
@@ -980,6 +978,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               <MediaCard
                 key={`${item.id}-${tIdx}`}
                 id={item.id}
+                index={tIdx}
                 title={item.title}
                 subtitle={item.artist}
                 imageUrl={item.thumbnailUrl}

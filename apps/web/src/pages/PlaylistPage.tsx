@@ -234,6 +234,9 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({ playlist, onBack, on
             return (
               <DSTrackRow
                 key={`${track.id}-${idx}`}
+                style={{
+                  animation: `m3CardCascade 320ms var(--m3-ease-emphasized-decelerate) ${Math.min(idx * 25, 300)}ms both`
+                }}
                 rank={idx + 1}
                 title={track.title}
                 artist={track.artist}

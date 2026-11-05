@@ -52,13 +52,14 @@ export const PaletteStudio: React.FC<PaletteStudioProps> = ({ onClose }) => {
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: 'rgba(0, 0, 0, 0.72)',
         backdropFilter: 'blur(16px)',
         zIndex: 300,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '24px'
+        padding: '24px',
+        animation: 'm3BackdropFade 200ms ease both'
       }}
     >
       <div
@@ -76,7 +77,8 @@ export const PaletteStudio: React.FC<PaletteStudioProps> = ({ onClose }) => {
           flexDirection: 'column',
           gap: '20px',
           color: 'var(--md-sys-color-on-surface)',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          animation: 'm3ModalSpringIn 340ms cubic-bezier(0.16, 1, 0.3, 1) both'
         }}
       >
         {/* Header */}

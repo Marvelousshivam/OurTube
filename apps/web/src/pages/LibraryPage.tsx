@@ -329,10 +329,18 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
               fontSize: '13px',
               fontWeight: 650,
               cursor: 'pointer',
-              transition: 'all 150ms ease'
+              transition: 'transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 150ms ease'
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-highest)')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)')}
+            onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.93)')}
+            onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-highest)';
+              e.currentTarget.style.transform = 'scale(1.03)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
             title="Refresh library from YouTube Music"
           >
             <span
@@ -546,18 +554,20 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
               boxShadow: '0 8px 24px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.12))',
               cursor: 'pointer',
               userSelect: 'none',
-              transition: 'transform 180ms ease, box-shadow 180ms ease',
+              transition: 'transform 240ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 240ms ease',
               flexWrap: 'wrap',
               gap: '20px'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 12px 32px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.18))';
+              e.currentTarget.style.transform = 'translateY(-4px) scale(1.008)';
+              e.currentTarget.style.boxShadow = '0 16px 40px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.22))';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.transform = 'translateY(0) scale(1)';
               e.currentTarget.style.boxShadow = '0 8px 24px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.12))';
             }}
+            onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.98)')}
+            onMouseUp={(e) => (e.currentTarget.style.transform = 'translateY(-4px) scale(1.008)')}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '20px', minWidth: 0 }}>
               {/* 12-Lobed Softburst Heart Badge */}
@@ -572,7 +582,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                  transition: 'transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1)'
                 }}
               >
                 <span className="material-symbols-rounded filled" style={{ fontSize: '32px' }}>
@@ -694,10 +705,11 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
                 gap: '18px'
               }}
             >
-              {filteredPlaylists.map((pl) => (
+              {filteredPlaylists.map((pl, plIdx) => (
                 <MediaCard
                   key={pl.id}
                   id={pl.id}
+                  index={plIdx}
                   title={pl.title}
                   subtitle={pl.subtitle}
                   imageUrl={pl.imageUrl}
@@ -927,6 +939,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
               return (
                 <DSTrackRow
                   key={track.id}
+                  style={{
+                    animation: `m3CardCascade 320ms var(--m3-ease-emphasized-decelerate) ${Math.min(idx * 25, 300)}ms both`
+                  }}
                   rank={idx + 1}
                   title={track.title}
                   artist={track.artist}
@@ -1100,6 +1115,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
               return (
                 <DSTrackRow
                   key={`${track.id}-${idx}`}
+                  style={{
+                    animation: `m3CardCascade 320ms var(--m3-ease-emphasized-decelerate) ${Math.min(idx * 25, 300)}ms both`
+                  }}
                   title={track.title}
                   artist={track.artist}
                   album={track.album}

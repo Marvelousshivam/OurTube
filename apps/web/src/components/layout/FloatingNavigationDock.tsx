@@ -118,7 +118,8 @@ export const FloatingNavigationDock: React.FC<FloatingNavigationDockProps> = ({
               style={{
                 fontSize: '20px',
                 transition: 'transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                transform: isActive ? 'scale(1.08)' : 'scale(1)'
+                transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                animation: isActive ? 'm3IconSpring 350ms var(--motion-spring-joyful)' : 'none'
               }}
             >
               {item.icon}
