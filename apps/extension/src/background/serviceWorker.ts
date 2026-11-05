@@ -3,10 +3,10 @@ import { getAuthState, setSelectedChannelId } from './auth';
 import { handleProxyFetch, handleStreamResolution } from './proxy';
 import { installDynamicRules } from './rules';
 
-console.log('[Koda Extension] Background Service Worker initialized.');
+console.log('[OurTube Companion] Background Service Worker initialized.');
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[Koda Extension] Installed successfully.');
+  console.log('[OurTube Companion] Installed successfully.');
   installDynamicRules();
 });
 
@@ -15,7 +15,9 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendResponse) => {
-  if (!message || message.channel !== 'KODA_BRIDGE_REQ') return;
+  if (!message || (message.channel !== 'KODA_BRIDGE_REQ' && message.channel !== 'OURTUBE_BRIDGE_REQ')) return;
+
+  const resChannel = message.channel === 'OURTUBE_BRIDGE_REQ' ? 'OURTUBE_BRIDGE_RES' : 'KODA_BRIDGE_RES';
 
   (async () => {
     try {
@@ -23,11 +25,12 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
         case 'KODA_BRIDGE_PING': {
           await installDynamicRules();
           const response: BridgeResponse = {
-            channel: 'KODA_BRIDGE_RES',
+            channel: resChannel,
             id: message.id,
             type: 'KODA_BRIDGE_PONG',
             success: true,
             data: {
+              name: 'OurTube Companion Extension',
               version: '1.0.0',
               status: 'ready'
             }
@@ -40,7 +43,7 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
         case 'KODA_BRIDGE_GET_ACCOUNTS': {
           const authState = await getAuthState();
           const response: BridgeResponse = {
-            channel: 'KODA_BRIDGE_RES',
+            channel: resChannel,
             id: message.id,
             type: message.type,
             success: true,
@@ -56,9 +59,9 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           }
           const authState = await getAuthState();
           const response: BridgeResponse = {
-            channel: 'KODA_BRIDGE_RES',
+            channel: resChannel,
             id: message.id,
-            type: 'KODA_BRIDGE_SELECT_ACCOUNT',
+            type: message.type,
             success: true,
             data: authState
           };
@@ -69,7 +72,7 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
         case 'KODA_BRIDGE_FETCH': {
           const fetchResult = await handleProxyFetch(message.payload);
           const response: BridgeResponse = {
-            channel: 'KODA_BRIDGE_RES',
+            channel: resChannel,
             id: message.id,
             type: 'KODA_BRIDGE_FETCH',
             success: true,
@@ -82,7 +85,7 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
         case 'KODA_BRIDGE_STREAM_URL': {
           const streamResult = await handleStreamResolution(message.payload);
           const response: BridgeResponse = {
-            channel: 'KODA_BRIDGE_RES',
+            channel: resChannel,
             id: message.id,
             type: 'KODA_BRIDGE_STREAM_URL',
             success: true,
@@ -94,7 +97,7 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
 
         default:
           sendResponse({
-            channel: 'KODA_BRIDGE_RES',
+            channel: resChannel,
             id: message.id,
             type: message.type,
             success: false,
@@ -102,9 +105,9 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           });
       }
     } catch (err: any) {
-      console.error('[Koda Extension] Bridge request failed:', err);
+      console.error('[OurTube Companion] Bridge request failed:', err);
       sendResponse({
-        channel: 'KODA_BRIDGE_RES',
+        channel: resChannel,
         id: message.id,
         type: message.type,
         success: false,

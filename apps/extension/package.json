@@ -1,9 +1,9 @@
 {
-  "name": "@koda/extension",
+  "name": "@ourtube/extension",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "vite build && node -e \"require('fs').copyFileSync('manifest.json', 'dist/manifest.json')\"",
+    "build": "vite build && node -e \"const fs=require('fs'); fs.copyFileSync('manifest.json', 'dist/manifest.json'); fs.cpSync('icons', 'dist/icons', {recursive: true});\"",
     "dev": "vite build --watch"
   },
   "dependencies": {

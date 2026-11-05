@@ -979,25 +979,50 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
 
                 <SettingsRow
                   icon="extension"
-                  title="Companion Extension Bridge"
-                  value={bridgeClient.getIsAvailable() ? 'Active (v1.0.0)' : 'Guest Mode (No companion)'}
-                  detail="Provides authenticated YouTube Music requests, CORS bypass, and Discord gateway"
+                  title="OurTube Companion Extension"
+                  value={bridgeClient.getIsAvailable() ? 'Connected · v1.0.0 Active' : 'Extension Missing'}
+                  detail="Enables zero-CORS streaming, YouTube Music InnerTube session authentication, and high-bitrate playback"
                   trailing={
-                    <button
-                      onClick={() => bridgeClient.refreshAuth().then(setAuthState)}
-                      style={{
-                        padding: '6px 14px',
-                        borderRadius: '9999px',
-                        backgroundColor: 'var(--md-sys-color-surface-container)',
-                        border: '1px solid var(--md-sys-color-outline-variant)',
-                        color: 'var(--md-sys-color-on-surface)',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 700
-                      }}
-                    >
-                      Ping Bridge
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <a
+                        href="/downloads/ourtube-companion.zip"
+                        download="ourtube-companion.zip"
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '9999px',
+                          backgroundColor: '#e53935',
+                          border: 'none',
+                          color: '#ffffff',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>
+                          download
+                        </span>
+                        Download Zip
+                      </a>
+                      <button
+                        onClick={() => bridgeClient.refreshAuth().then(setAuthState)}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '9999px',
+                          backgroundColor: 'var(--md-sys-color-surface-container)',
+                          border: '1px solid var(--md-sys-color-outline-variant)',
+                          color: 'var(--md-sys-color-on-surface)',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 700
+                        }}
+                      >
+                        Ping Bridge
+                      </button>
+                    </div>
                   }
                 />
 

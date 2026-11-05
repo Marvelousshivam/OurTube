@@ -1,5 +1,5 @@
 {
-  "name": "koda-web-monorepo",
+  "name": "ourtube-monorepo",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -7,8 +7,10 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
-    "build": "npm run build --workspaces",
+    "icons": "node scripts/generate-icons.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
+    "build:extension": "npm run build --workspace=apps/extension && node scripts/package-extension.mjs",
     "build:web": "npm run build --workspace=apps/web",
-    "build:extension": "npm run build --workspace=apps/extension"
+    "build": "npm run build --workspace=apps/extension && node scripts/package-extension.mjs && npm run build --workspace=apps/web"
   }
 }

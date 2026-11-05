@@ -242,7 +242,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
               <span style={{ fontSize: '13px' }}>
                 {isBridgeConnected
                   ? 'Ensure your YouTube Music account has created or saved playlists.'
-                  : 'Connect the Koda Companion Extension to sync your YouTube Music library.'}
+                  : 'Connect the OurTube Companion Extension to sync your YouTube Music library.'}
               </span>
             </div>
           )}
@@ -413,7 +413,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
             </div>
 
             <p style={{ fontSize: '14px', color: COLOR_TOKENS.onSurfaceVariant, margin: 0, lineHeight: 1.5 }}>
-              The Koda Web Companion Extension bridges authentic Google account credentials and InnerTube API calls directly from your active browser session.
+              The OurTube Companion Extension bridges authentic Google account credentials and InnerTube API calls directly from your active browser session.
             </p>
 
             <DSButton

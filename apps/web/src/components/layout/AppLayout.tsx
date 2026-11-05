@@ -11,11 +11,14 @@ import { AccountSwitcher } from './AccountSwitcher';
 import { PaletteStudio } from '../theme/PaletteStudio';
 import { FloatingNavigationDock, NavTab } from './FloatingNavigationDock';
 import { SettingsPage } from '../../pages/SettingsPage';
-import { bridgeClient } from '../../api/bridgeClient';
+import { bridgeClient, ExtensionConnectionState } from '../../api/bridgeClient';
+import { ExtensionRequiredGate } from '../extension/ExtensionRequiredGate';
 import { discordPresenceManager } from '../../api/discordPresence';
 import { useTasteStore } from '../../store/tasteStore';
 
 export const AppLayout: React.FC = () => {
+  const [bridgeState, setBridgeState] = useState<ExtensionConnectionState>(bridgeClient.getConnectionState());
+  const [isBridgeConnected, setIsBridgeConnected] = useState(bridgeClient.getIsAvailable());
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '') as NavTab;
@@ -39,7 +42,6 @@ export const AppLayout: React.FC = () => {
     imageUrl?: string;
   } | null>(null);
 
-  const [isBridgeConnected, setIsBridgeConnected] = useState(bridgeClient.getIsAvailable());
   const [isPaletteStudioOpen, setIsPaletteStudioOpen] = useState(false);
   const [isDockHidden, setIsDockHidden] = useState(false);
 
@@ -47,12 +49,27 @@ export const AppLayout: React.FC = () => {
   const { loadInitialData } = useTasteStore();
 
   useEffect(() => {
-    loadInitialData();
-    discordPresenceManager.init();
-
-    const unsub = bridgeClient.onAvailabilityChange((available) => {
-      setIsBridgeConnected(available);
+    const unsubState = bridgeClient.onStateChange((state) => {
+      setBridgeState(state);
+      if (state === 'connected') {
+        loadInitialData();
+        discordPresenceManager.init();
+      }
     });
+
+    const unsubAvail = bridgeClient.onAvailabilityChange((available) => {
+      setIsBridgeConnected(available);
+      if (available) {
+        setBridgeState('connected');
+        loadInitialData();
+        discordPresenceManager.init();
+      }
+    });
+
+    if (bridgeClient.getIsAvailable()) {
+      loadInitialData();
+      discordPresenceManager.init();
+    }
 
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '') as NavTab;
@@ -66,7 +83,8 @@ export const AppLayout: React.FC = () => {
     window.addEventListener('hashchange', handleHashChange);
 
     return () => {
-      unsub();
+      unsubState();
+      unsubAvail();
       discordPresenceManager.destroy();
       window.removeEventListener('hashchange', handleHashChange);
     };
@@ -127,6 +145,43 @@ export const AppLayout: React.FC = () => {
       handleSelectTab(previousTab || 'home');
     }
   };
+
+  if (bridgeState === 'checking') {
+    return (
+      <div
+        style={{
+          height: '100vh',
+          width: '100vw',
+          backgroundColor: 'var(--md-sys-color-surface, #121316)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '20px',
+          fontFamily: "'Roboto Flex', system-ui, sans-serif"
+        }}
+      >
+        <div
+          style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            border: '3px solid rgba(255, 255, 255, 0.08)',
+            borderTopColor: '#e53935',
+            animation: 'spin 0.8s linear infinite'
+          }}
+        />
+        <span style={{ fontSize: '14px', fontWeight: 600, color: '#91909a', letterSpacing: '0.02em' }}>
+          Connecting to OurTube Bridge...
+        </span>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (bridgeState === 'missing' || !isBridgeConnected) {
+    return <ExtensionRequiredGate />;
+  }
 
   return (
     <div

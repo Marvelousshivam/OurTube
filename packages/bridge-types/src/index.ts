@@ -8,15 +8,18 @@ export type BridgeMessageType =
   | 'KODA_BRIDGE_STREAM_URL'
   | 'KODA_BRIDGE_COOKIE_SYNC';
 
+export type BridgeRequestChannel = 'OURTUBE_BRIDGE_REQ' | 'KODA_BRIDGE_REQ';
+export type BridgeResponseChannel = 'OURTUBE_BRIDGE_RES' | 'KODA_BRIDGE_RES';
+
 export interface BridgeRequest<T = any> {
-  channel: 'KODA_BRIDGE_REQ';
+  channel: BridgeRequestChannel;
   id: string;
   type: BridgeMessageType;
   payload?: T;
 }
 
 export interface BridgeResponse<T = any> {
-  channel: 'KODA_BRIDGE_RES';
+  channel: BridgeResponseChannel;
   id: string;
   type: BridgeMessageType;
   success: boolean;
