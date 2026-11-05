@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Koda Web Bridge Extension",
+  "version": "1.0.0",
+  "description": "Companion extension for Koda Web: enables YouTube Music session authentication, streaming, and CORS-free InnerTube access.",
+  "permissions": [
+    "cookies",
+    "declarativeNetRequest",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*.koda.app/*",
+    "https://*.vercel.app/*",
+    "https://music.youtube.com/*",
+    "https://www.youtube.com/*",
+    "https://*.youtube.com/*",
+    "https://*.googlevideo.com/*",
+    "https://accounts.google.com/*",
+    "https://*.google.com/*"
+  ],
+  "background": {
+    "service_worker": "serviceWorker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://*.koda.app/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost/*",
+      "http://127.0.0.1/*",
+      "https://*.koda.app/*",
+      "https://*.vercel.app/*"
+    ]
+  },
+  "action": {
+    "default_title": "Koda Web Bridge"
+  }
+}

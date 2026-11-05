@@ -1,0 +1,14 @@
+{
+  "name": "koda-web-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspaces",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:extension": "npm run build --workspace=apps/extension"
+  }
+}

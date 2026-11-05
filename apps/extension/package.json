@@ -1,0 +1,18 @@
+{
+  "name": "@koda/extension",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "vite build && node -e \"require('fs').copyFileSync('manifest.json', 'dist/manifest.json')\"",
+    "dev": "vite build --watch"
+  },
+  "dependencies": {
+    "@koda/bridge-types": "*",
+    "youtubei.js": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.280",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
