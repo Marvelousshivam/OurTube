@@ -3,6 +3,15 @@ export type VideoQuality = 'auto' | '1080p' | '720p' | '480p' | '360p';
 export type RepeatMode = 'off' | 'all' | 'one';
 export type PlayerStyle = 'EDITORIAL' | 'CLASSIC' | 'BENTO' | 'CANVAS' | 'GESTURE' | 'STICKER' | 'HERO';
 
+export type QueueTier = 'context' | 'user' | 'autoplay';
+
+export interface QueueEntry {
+  entryId: string;
+  track: TrackMetadata;
+  tier: QueueTier;
+  sourceTitle?: string;
+}
+
 export interface TrackMetadata {
   id: string;
   title: string;
@@ -31,8 +40,10 @@ export interface LyricsLine {
 
 export interface LyricsData {
   synced: boolean;
-  provider: 'lrclib' | 'innertube' | 'local';
+  wordSynced?: boolean;
+  provider: 'lrc.red' | 'lrclib' | 'innertube' | 'local';
   lines: LyricsLine[];
+  ttml?: string;
 }
 
 export interface YtChannel {
@@ -74,6 +85,10 @@ export interface TasteEntry {
   title: string;
   artist: string;
   artistId?: string;
+  album?: string;
+  thumbnailUrl?: string;
+  highResThumbnailUrl?: string;
+  duration?: number;
   playedAt: number;
   playCount: number;
   completionRate: number; // 0 to 1

@@ -25,6 +25,44 @@ export async function handleProxyFetch(payload: FetchRequestPayload): Promise<Fe
   const auth = await getAuthState();
   const identity = await getActiveIdentity();
 
+  // Ensure authuser query parameter is always present on target URL so Google routes to the selected account
+  let targetUrl = payload.url;
+  try {
+    const parsedUrl = new URL(payload.url);
+    if (!parsedUrl.searchParams.has('authuser')) {
+      parsedUrl.searchParams.set('authuser', identity.authUser);
+    }
+    targetUrl = parsedUrl.toString();
+  } catch {
+    // Keep fallback if not full URL
+  }
+
+  // Ensure body context contains active user and onBehalfOfUser if brand/secondary channel
+  let requestBody: any = payload.body;
+  if (requestBody) {
+    try {
+      const parsedBody = typeof requestBody === 'string' ? JSON.parse(requestBody) : { ...requestBody };
+      if (parsedBody && typeof parsedBody === 'object') {
+        parsedBody.context = parsedBody.context || {};
+        parsedBody.context.client = {
+          clientName: 'WEB_REMIX',
+          clientVersion: '1.20251006.03.00',
+          hl: 'en',
+          gl: 'IN',
+          ...(parsedBody.context.client || {})
+        };
+        parsedBody.context.user = parsedBody.context.user || {};
+        if (identity.pageId) {
+          parsedBody.context.user.onBehalfOfUser = identity.pageId;
+        }
+        parsedBody.context.user.authuser = identity.authUser;
+        requestBody = JSON.stringify(parsedBody);
+      }
+    } catch {
+      // Keep original body if parsing fails
+    }
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Origin': MUSIC_ORIGIN,
@@ -44,10 +82,10 @@ export async function handleProxyFetch(payload: FetchRequestPayload): Promise<Fe
     headers['Authorization'] = auth.sapisidHash;
   }
 
-  const response = await fetch(payload.url, {
+  const response = await fetch(targetUrl, {
     method: payload.method || 'GET',
     headers,
-    body: payload.body ? (typeof payload.body === 'string' ? payload.body : JSON.stringify(payload.body)) : undefined,
+    body: requestBody,
     credentials: 'include'
   });
 

@@ -195,6 +195,18 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
               >
                 {track.artist}
               </p>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  color: 'var(--md-sys-color-on-surface)',
+                  opacity: 0.4,
+                  marginTop: '4px'
+                }}
+              >
+                256k AAC
+              </span>
             </div>
 
             {/* Asymmetric Bento Control Cluster (Matching Koda Image 2) */}
@@ -436,30 +448,6 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                   lyrics
                 </span>
               </button>
-
-              {/* Audio Spec Badge */}
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  borderRadius: '9999px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  color: 'var(--md-sys-color-primary)',
-                  textTransform: 'uppercase',
-                  marginLeft: 'auto'
-                }}
-              >
-                <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>
-                  graphic_eq
-                </span>
-                256k AAC · HQ
-              </span>
             </div>
           </div>
         </div>

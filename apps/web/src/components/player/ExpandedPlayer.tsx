@@ -350,28 +350,6 @@ export const ExpandedPlayer: React.FC = () => {
 
         {/* Right Header Action Deck */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Audio Quality Chip */}
-          <span
-            className="glass-pill"
-            style={{
-              display: isWideScreen ? 'inline-flex' : 'none',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 14px',
-              borderRadius: '9999px',
-              fontSize: '11px',
-              fontWeight: 800,
-              letterSpacing: '0.04em',
-              color: 'var(--md-sys-color-primary)',
-              backgroundColor: 'rgba(255, 255, 255, 0.06)'
-            }}
-          >
-            <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>
-              graphic_eq
-            </span>
-            {streamAudioUrl?.includes('opus') ? '160k OPUS' : '256k AAC'}
-          </span>
-
           {/* Player Style Selector Button */}
           <button
             onClick={() => setIsStylePickerOpen(true)}

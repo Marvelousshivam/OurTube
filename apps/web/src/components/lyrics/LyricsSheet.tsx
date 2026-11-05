@@ -1,40 +1,140 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { usePlayerStore } from '../../store/playerStore';
-import { lyricsService } from '../../api/lyricsService';
-import { LyricsData } from '../../types';
+import { LyricClock } from '../../lyrics/clock';
 
 export interface LyricsSheetProps {
   isEmbedded?: boolean;
 }
 
 export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) => {
-  const { currentTrack, currentTime, duration, seek, setLyricsOpen } = usePlayerStore();
-  const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const {
+    currentTrack,
+    currentTime,
+    duration,
+    isPlaying,
+    seek,
+    lyricsData,
+    isLyricsLoading,
+    loadLyricsForTrack,
+    setLyricsOpen
+  } = usePlayerStore();
+
+  const [amLyricsSupported, setAmLyricsSupported] = useState(true);
+
+  // Fallback line-by-line scroll refs
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef<HTMLDivElement | null>(null);
 
+  // am-lyrics custom element refs
+  const amContainerRef = useRef<HTMLDivElement | null>(null);
+  const amElementRef = useRef<any>(null);
+
+  // BitChord LyricClock refs
+  const clockRef = useRef<LyricClock | null>(null);
+  const lastTimeRef = useRef<number>(currentTime);
+  const discontinuityRef = useRef<number>(0);
+
+  // Ensure lyrics are loaded for current track
   useEffect(() => {
-    if (!currentTrack) {
-      setLyricsData(null);
-      return;
+    if (currentTrack && !lyricsData && !isLyricsLoading) {
+      loadLyricsForTrack(currentTrack);
     }
+  }, [currentTrack, lyricsData, isLyricsLoading, loadLyricsForTrack]);
 
-    setLoading(true);
-    lyricsService
-      .getLyrics(currentTrack.title, currentTrack.artist, currentTrack.duration || duration)
-      .then((data) => {
-        setLyricsData(data);
-        setLoading(false);
+  // Mount & configure <am-lyrics> Web Component dynamically
+  useEffect(() => {
+    if (!lyricsData?.ttml || !amContainerRef.current) return;
+
+    let mounted = true;
+
+    import('@uimaxbai/am-lyrics/am-lyrics.js')
+      .then(() => {
+        if (!mounted || !amContainerRef.current) return;
+
+        amContainerRef.current.innerHTML = '';
+
+        const el = document.createElement('am-lyrics') as any;
+        el.style.width = '100%';
+        el.style.height = '100%';
+        el.style.display = 'block';
+
+        // Apple Music typography & animation parameters
+        el.autoScroll = true;
+        el.interpolate = true;
+        el.noAutoAlternates = true;
+        el.lineMotion = 'staggered';
+        el.highlightColor = '#ffffff';
+
+        el.ttml = lyricsData.ttml;
+        el.currentTime = currentTime * 1000;
+
+        const handleLineClick = (e: any) => {
+          const timestampMs = e?.detail?.timestamp;
+          if (typeof timestampMs === 'number') {
+            seek(timestampMs / 1000);
+          }
+        };
+
+        el.addEventListener('line-click', handleLineClick);
+
+        amContainerRef.current.appendChild(el);
+        amElementRef.current = el;
+
+        clockRef.current = new LyricClock(currentTime * 1000);
       })
-      .catch(() => {
-        setLyricsData(null);
-        setLoading(false);
+      .catch((err) => {
+        console.warn('[OurTube Lyrics] am-lyrics load error, fallback to lines:', err);
+        setAmLyricsSupported(false);
       });
-  }, [currentTrack]);
 
-  // Find active line index based on current playback time
+    return () => {
+      mounted = false;
+      if (amContainerRef.current) {
+        amContainerRef.current.innerHTML = '';
+      }
+      amElementRef.current = null;
+    };
+  }, [lyricsData?.ttml]);
+
+  // Keep LyricClock and am-lyrics in sync with seek / pause
+  useEffect(() => {
+    if (Math.abs(currentTime - lastTimeRef.current) > 1.2) {
+      discontinuityRef.current++;
+      clockRef.current?.hold(currentTime * 1000, performance.now());
+    }
+    lastTimeRef.current = currentTime;
+
+    if (!isPlaying && amElementRef.current) {
+      clockRef.current?.hold(currentTime * 1000, performance.now());
+      amElementRef.current.currentTime = currentTime * 1000;
+    }
+  }, [currentTime, isPlaying]);
+
+  // Frame interpolation loop for smooth word-by-word wipes
+  useEffect(() => {
+    let rafId: number;
+
+    const tick = (now: number) => {
+      if (isPlaying && amElementRef.current) {
+        if (!clockRef.current) {
+          clockRef.current = new LyricClock(currentTime * 1000);
+        }
+        const songMs = clockRef.current.frame(
+          now,
+          currentTime * 1000,
+          now,
+          discontinuityRef.current
+        );
+        amElementRef.current.currentTime = songMs;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [isPlaying, currentTime]);
+
+  // Fallback line active index
   let activeIndex = -1;
   if (lyricsData?.lines && lyricsData.lines.length > 0) {
     for (let i = lyricsData.lines.length - 1; i >= 0; i--) {
@@ -45,34 +145,22 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
     }
   }
 
-  // Strictly container-scoped smooth scrolling: NEVER call element.scrollIntoView!
-  // scrollIntoView() scrolls all ancestor elements including the window/page, which pushes the top bar out of view.
+  // Smooth container-scoped scrolling for fallback line mode
   useEffect(() => {
+    if (lyricsData?.ttml && amLyricsSupported) return;
     const container = scrollContainerRef.current;
     const activeEl = activeLineRef.current;
     if (container && activeEl) {
-      // Calculate active element offset relative to the scrolling container
       const targetScroll =
-        activeEl.offsetTop - (container.clientHeight * 0.42) + (activeEl.clientHeight / 2);
-
+        activeEl.offsetTop - container.clientHeight * 0.42 + activeEl.clientHeight / 2;
       container.scrollTo({
         top: Math.max(0, targetScroll),
         behavior: 'smooth'
       });
     }
-  }, [activeIndex]);
+  }, [activeIndex, lyricsData?.ttml, amLyricsSupported]);
 
-  const handleCopyLyrics = async () => {
-    if (!lyricsData || lyricsData.lines.length === 0) return;
-    const fullText = lyricsData.lines.map((l) => l.text).join('\n');
-    try {
-      await navigator.clipboard.writeText(fullText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.warn('Clipboard write failed:', err);
-    }
-  };
+  const hasAmLyrics = Boolean(lyricsData?.ttml && amLyricsSupported);
 
   return (
     <div
@@ -83,111 +171,56 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
         width: '100%',
         maxWidth: isEmbedded ? '100%' : '760px',
         margin: '0 auto',
-        padding: isEmbedded ? '0 12px' : '20px 24px',
+        padding: isEmbedded ? '0' : '12px 20px',
         overflow: 'hidden',
         position: 'relative'
       }}
     >
-      {/* Standalone Header (Only shown when opened as modal sheet in mobile, omitted when embedded in widescreen) */}
+      {/* Mobile sheet close button only (omitted when embedded in desktop companion panel) */}
       {!isEmbedded && (
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '16px',
+            justifyContent: 'flex-end',
+            padding: '4px 0 8px 0',
             flexShrink: 0
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span
-              className="material-symbols-rounded"
-              style={{ color: 'var(--md-sys-color-primary)', fontSize: '22px' }}
-            >
-              lyrics
+          <button
+            onClick={() => setLyricsOpen(false)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--md-sys-color-on-surface)',
+              cursor: 'pointer',
+              padding: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              borderRadius: '50%'
+            }}
+            aria-label="Close lyrics"
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '22px' }}>
+              close
             </span>
-            <h2 style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.01em' }}>Lyrics</h2>
-            {lyricsData?.synced && (
-              <span
-                className="glass-pill"
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                  color: 'var(--md-sys-color-primary)'
-                }}
-              >
-                SYNCED
-              </span>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={handleCopyLyrics}
-              disabled={!lyricsData || lyricsData.lines.length === 0}
-              className="glass-pill"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
-                borderRadius: '9999px',
-                border: 'none',
-                color: copied ? '#4caf50' : 'var(--md-sys-color-primary)',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: lyricsData && lyricsData.lines.length > 0 ? 'pointer' : 'default',
-                opacity: lyricsData && lyricsData.lines.length > 0 ? 1 : 0.5,
-                transition: 'all 200ms ease'
-              }}
-              title="Copy lyrics"
-            >
-              <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>
-                {copied ? 'check' : 'content_copy'}
-              </span>
-              <span>{copied ? 'Copied' : 'Copy'}</span>
-            </button>
-
-            <button
-              onClick={() => setLyricsOpen(false)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--md-sys-color-on-surface)',
-                cursor: 'pointer',
-                padding: '6px',
-                display: 'flex',
-                alignItems: 'center',
-                borderRadius: '50%'
-              }}
-            >
-              <span className="material-symbols-rounded" style={{ fontSize: '22px' }}>
-                close
-              </span>
-            </button>
-          </div>
+          </button>
         </div>
       )}
 
-      {/* Lyrics Scroll Canvas: Apple Music / BitChord caliber smooth flowing typography */}
+      {/* Main Viewport Container: Pure lyrics with top & bottom edge fade mask */}
       <div
-        ref={scrollContainerRef}
         style={{
           flex: 1,
-          overflowY: 'auto',
-          overscrollBehavior: 'contain',
-          scrollBehavior: 'smooth',
-          padding: isEmbedded ? '32px 8px 180px 8px' : '40px 12px 140px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: isEmbedded ? '32px' : '26px',
-          maskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 88%, transparent 100%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 88%, transparent 100%)'
+          minHeight: 0,
+          position: 'relative',
+          overflow: 'hidden',
+          maskImage:
+            'linear-gradient(to bottom, transparent 0%, black 5%, black 90%, transparent 100%)',
+          WebkitMaskImage:
+            'linear-gradient(to bottom, transparent 0%, black 5%, black 90%, transparent 100%)'
         }}
       >
-        {loading && (
+        {isLyricsLoading && (
           <div
             style={{
               display: 'flex',
@@ -209,7 +242,7 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
           </div>
         )}
 
-        {!loading && (!lyricsData || lyricsData.lines.length === 0) && (
+        {!isLyricsLoading && (!lyricsData || lyricsData.lines.length === 0) && (
           <div
             style={{
               display: 'flex',
@@ -221,10 +254,7 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
               color: 'var(--md-sys-color-outline)'
             }}
           >
-            <span
-              className="material-symbols-rounded"
-              style={{ fontSize: '42px', opacity: 0.6 }}
-            >
+            <span className="material-symbols-rounded" style={{ fontSize: '42px', opacity: 0.5 }}>
               music_off
             </span>
             <span style={{ fontSize: '15px', fontWeight: 600 }}>
@@ -233,41 +263,69 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
           </div>
         )}
 
-        {!loading &&
-          lyricsData?.lines.map((line, idx) => {
-            const isActive = idx === activeIndex;
-            return (
-              <div
-                key={idx}
-                ref={isActive ? activeLineRef : null}
-                onClick={() => seek(line.time)}
-                style={{
-                  fontSize: isEmbedded
-                    ? 'clamp(26px, 2.6vw, 38px)'
-                    : 'clamp(20px, 4vw, 28px)',
-                  fontWeight: isActive ? 800 : 700,
-                  lineHeight: '1.45',
-                  letterSpacing: '-0.02em',
-                  color: isActive ? '#ffffff' : 'var(--md-sys-color-on-surface)',
-                  opacity: isActive ? 1 : 0.28,
-                  filter: isActive ? 'none' : 'blur(0.2px)',
-                  transform: isActive ? 'scale(1.025)' : 'scale(1)',
-                  transformOrigin: 'left center',
-                  cursor: 'pointer',
-                  transition: 'all 320ms cubic-bezier(0.2, 0, 0, 1)',
-                  textShadow: isActive ? '0 4px 24px rgba(255, 255, 255, 0.35)' : 'none'
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.opacity = '0.7';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.opacity = '0.28';
-                }}
-              >
-                {line.text}
-              </div>
-            );
-          })}
+        {/* Dynamic Apple Music word-by-word custom element mount */}
+        {!isLyricsLoading && hasAmLyrics && (
+          <div
+            ref={amContainerRef}
+            style={{
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden'
+            }}
+          />
+        )}
+
+        {/* Graceful fallback line-by-line renderer */}
+        {!isLyricsLoading && !hasAmLyrics && lyricsData?.lines && lyricsData.lines.length > 0 && (
+          <div
+            ref={scrollContainerRef}
+            style={{
+              height: '100%',
+              overflowY: 'auto',
+              overscrollBehavior: 'contain',
+              scrollBehavior: 'smooth',
+              padding: isEmbedded ? '28px 8px 180px 8px' : '36px 12px 140px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: isEmbedded ? '30px' : '24px'
+            }}
+          >
+            {lyricsData.lines.map((line, idx) => {
+              const isActive = idx === activeIndex;
+              return (
+                <div
+                  key={idx}
+                  ref={isActive ? activeLineRef : null}
+                  onClick={() => seek(line.time)}
+                  style={{
+                    fontSize: isEmbedded
+                      ? 'clamp(26px, 2.6vw, 38px)'
+                      : 'clamp(20px, 4vw, 28px)',
+                    fontWeight: isActive ? 800 : 700,
+                    lineHeight: '1.45',
+                    letterSpacing: '-0.02em',
+                    color: isActive ? '#ffffff' : 'var(--md-sys-color-on-surface)',
+                    opacity: isActive ? 1 : 0.28,
+                    filter: isActive ? 'none' : 'blur(0.2px)',
+                    transform: isActive ? 'scale(1.025)' : 'scale(1)',
+                    transformOrigin: 'left center',
+                    cursor: 'pointer',
+                    transition: 'all 320ms cubic-bezier(0.2, 0, 0, 1)',
+                    textShadow: isActive ? '0 4px 24px rgba(255, 255, 255, 0.35)' : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) (e.currentTarget as HTMLElement).style.opacity = '0.7';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) (e.currentTarget as HTMLElement).style.opacity = '0.28';
+                  }}
+                >
+                  {line.text}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

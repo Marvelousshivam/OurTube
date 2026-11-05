@@ -90,7 +90,24 @@ export interface StreamOptions {
 export async function resolveStream(options: StreamOptions): Promise<StreamResolutionResponse> {
   const { videoId, quality = 'auto', mode = 'music' } = options;
 
-  // 1. Same-Origin Vite stream resolver (when running under local Vite dev server)
+  // 1. Companion extension bridge (direct host permissions in background, 0 CORS, supports signed sessions)
+  if (bridgeClient.getIsAvailable()) {
+    try {
+      const bridgeRes = await bridgeClient.resolveStream({
+        videoId,
+        quality,
+        mode
+      });
+
+      if (bridgeRes?.audioUrl) {
+        return bridgeRes;
+      }
+    } catch (bridgeErr) {
+      console.warn('[StreamResolver] Extension bridge stream resolution failed:', bridgeErr);
+    }
+  }
+
+  // 2. Same-Origin Vite stream resolver (when running under local Vite dev server)
   try {
     const res = await window.fetch(`/api/resolve-stream?videoId=${encodeURIComponent(videoId)}`);
     if (res.ok) {
@@ -109,7 +126,7 @@ export async function resolveStream(options: StreamOptions): Promise<StreamResol
     // Continue to direct resolution
   }
 
-  // 2. Direct Innertube VISIONOS resolution (CORS-free simple request, returns direct unencrypted googlevideo.com URLs)
+  // 3. Direct Innertube VISIONOS resolution (CORS-free simple request, returns direct unencrypted googlevideo.com URLs)
   try {
     const yt = await getWebInnertube();
     const res = await yt.actions.execute('/player', { videoId, client: 'VISIONOS' });
@@ -155,23 +172,6 @@ export async function resolveStream(options: StreamOptions): Promise<StreamResol
     }
   } catch (directErr) {
     console.warn('[StreamResolver] Direct VISIONOS resolution error:', directErr);
-  }
-
-  // 3. Try companion extension bridge
-  if (bridgeClient.getIsAvailable()) {
-    try {
-      const bridgeRes = await bridgeClient.resolveStream({
-        videoId,
-        quality,
-        mode
-      });
-
-      if (bridgeRes?.audioUrl) {
-        return bridgeRes;
-      }
-    } catch (bridgeErr) {
-      console.warn('[StreamResolver] Extension bridge stream resolution failed:', bridgeErr);
-    }
   }
 
   // 4. Fallback: getInfo with signature deciphering

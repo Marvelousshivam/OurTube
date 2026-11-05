@@ -4,6 +4,7 @@ import { usePlayerStore } from '../store/playerStore';
 import { bridgeClient } from '../api/bridgeClient';
 import { innertubeService, UserPlaylist } from '../api/innertubeService';
 import { AuthState, TrackMetadata } from '../types';
+import { sizedArtwork } from '../api/artworkService';
 import {
   COLOR_TOKENS,
   DSButton,
@@ -32,7 +33,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
   const [userPlaylists, setUserPlaylists] = useState<UserPlaylist[]>([]);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
 
-  const { likedTracks, history, toggleLikeTrack } = useTasteStore();
+  const { likedTracks, history, isLiked, toggleLikeTrack } = useTasteStore();
   const { playTrack, currentTrack, isPlaying } = usePlayerStore();
 
   const loadPlaylists = () => {
@@ -353,32 +354,35 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpen
               <span style={{ fontSize: '13px' }}>Played tracks will show up here.</span>
             </div>
           ) : (
-            history.map((entry) => (
-              <div
-                key={entry.trackId}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '16px',
-                  padding: '12px 16px',
-                  borderRadius: '16px',
-                  backgroundColor: COLOR_TOKENS.surfaceContainer,
-                  cursor: 'pointer'
-                }}
-              >
-                <span className="material-symbols-rounded" style={{ color: COLOR_TOKENS.primary }}>
-                  history
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: COLOR_TOKENS.onSurface }}>
-                    {entry.title}
-                  </div>
-                  <div style={{ fontSize: '12px', color: COLOR_TOKENS.onSurfaceVariant, marginTop: '2px' }}>
-                    {entry.artist} • {entry.playCount} plays
-                  </div>
-                </div>
-              </div>
-            ))
+            history.map((entry) => {
+              const track: TrackMetadata = {
+                id: entry.trackId,
+                title: entry.title,
+                artist: entry.artist,
+                album: entry.album,
+                duration: entry.duration || 210,
+                thumbnailUrl: entry.thumbnailUrl || `https://i.ytimg.com/vi/${entry.trackId}/hqdefault.jpg`,
+                highResThumbnailUrl: sizedArtwork(entry.thumbnailUrl || `https://i.ytimg.com/vi/${entry.trackId}/hqdefault.jpg`, 600)
+              };
+              const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+              return (
+                <DSTrackRow
+                  key={entry.trackId}
+                  title={track.title}
+                  artist={`${track.artist} • ${entry.playCount || 1} play${(entry.playCount || 1) > 1 ? 's' : ''}`}
+                  album={track.album}
+                  duration={track.duration}
+                  imageUrl={track.thumbnailUrl}
+                  isPlaying={isThisPlaying}
+                  isLiked={isLiked(track.id)}
+                  onPlay={() => playTrack(track)}
+                  onToggleLike={(e) => {
+                    e.stopPropagation();
+                    toggleLikeTrack(track);
+                  }}
+                />
+              );
+            })
           )}
         </div>
       )}

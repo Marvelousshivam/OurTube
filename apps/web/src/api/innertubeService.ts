@@ -116,13 +116,20 @@ export class InnertubeService {
    * 3. BitChord Simple Request (text/plain) -> 0 CORS preflight OPTIONS check
    */
   public async fetchInnerTubeEndpoint(endpoint: string, bodyPayload: any): Promise<any> {
+    const authState = bridgeClient.getAuthState();
+    const activeAuthUser = authState?.selectedChannel?.authUser || '0';
+    const activePageId = authState?.selectedChannel?.pageId || null;
+
     const defaultPayload = {
       context: {
         client: {
           clientName: 'WEB_REMIX',
           clientVersion: '1.20251006.03.00',
           hl: 'en',
-          gl: 'US'
+          gl: 'IN'
+        },
+        user: {
+          onBehalfOfUser: activePageId || undefined
         }
       },
       ...bodyPayload
@@ -132,7 +139,7 @@ export class InnertubeService {
     if (bridgeClient.getIsAvailable()) {
       try {
         const response = await bridgeClient.fetchInnertube({
-          url: `https://music.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false`,
+          url: `https://music.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false&authuser=${activeAuthUser}`,
           method: 'POST',
           body: defaultPayload
         });
@@ -144,7 +151,7 @@ export class InnertubeService {
 
     // 2. Try Vite dev server proxy (/api/ytmusic)
     try {
-      const proxyRes = await window.fetch(`/api/ytmusic/youtubei/v1/${endpoint}?prettyPrint=false`, {
+      const proxyRes = await window.fetch(`/api/ytmusic/youtubei/v1/${endpoint}?prettyPrint=false&authuser=${activeAuthUser}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(defaultPayload)
@@ -201,39 +208,91 @@ export class InnertubeService {
     const tracks: TrackMetadata[] = [];
     if (!data) return tracks;
 
+    const seenIds = new Set<string>();
+
+    const addRenderer = (r: any) => {
+      if (!r || !r.videoId || seenIds.has(r.videoId)) return;
+      seenIds.add(r.videoId);
+
+      const title = this.getNodeText(r.title);
+      if (!title) return;
+
+      const rawArtist = this.getNodeText(r.longBylineText) || this.getNodeText(r.shortBylineText);
+      const artist = this.cleanArtistSubtitle(rawArtist) || 'YouTube Music';
+      const thumb =
+        r.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
+        `https://i.ytimg.com/vi/${r.videoId}/hqdefault.jpg`;
+      const dur = this.parseDurationString(this.getNodeText(r.lengthText));
+
+      tracks.push({
+        id: r.videoId,
+        title: title.trim(),
+        artist,
+        duration: dur,
+        thumbnailUrl: thumb,
+        highResThumbnailUrl: sizedArtwork(thumb, 1200)
+      });
+    };
+
     try {
+      // 1. Direct musicQueueRenderer.content.playlistPanelRenderer
       const playlist =
         data?.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer?.watchNextTabbedResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.musicQueueRenderer?.content?.playlistPanelRenderer;
       const contents = playlist?.contents || [];
 
       for (const item of contents) {
-        const r = item?.playlistPanelVideoRenderer;
-        if (!r || !r.videoId) continue;
+        if (item?.playlistPanelVideoRenderer) {
+          addRenderer(item.playlistPanelVideoRenderer);
+        } else if (item?.playlistPanelVideoWrapperRenderer?.primaryRenderer?.playlistPanelVideoRenderer) {
+          addRenderer(item.playlistPanelVideoWrapperRenderer.primaryRenderer.playlistPanelVideoRenderer);
+        }
+      }
 
-        const title = this.getNodeText(r.title);
-        if (!title) continue;
-
-        const rawArtist = this.getNodeText(r.longBylineText) || this.getNodeText(r.shortBylineText);
-        const artist = this.cleanArtistSubtitle(rawArtist) || 'YouTube Music';
-        const thumb =
-          r.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
-          `https://i.ytimg.com/vi/${r.videoId}/hqdefault.jpg`;
-        const dur = this.parseDurationString(this.getNodeText(r.lengthText));
-
-        tracks.push({
-          id: r.videoId,
-          title: title.trim(),
-          artist,
-          duration: dur,
-          thumbnailUrl: thumb,
-          highResThumbnailUrl: sizedArtwork(thumb, 1200)
-        });
+      // 2. If empty, scan entire object recursively for any playlistPanelVideoRenderer
+      if (tracks.length === 0) {
+        const scan = (node: any) => {
+          if (!node || typeof node !== 'object') return;
+          if (node.playlistPanelVideoRenderer) {
+            addRenderer(node.playlistPanelVideoRenderer);
+          }
+          if (Array.isArray(node)) {
+            for (const el of node) scan(el);
+          } else {
+            for (const v of Object.values(node)) scan(v);
+          }
+        };
+        scan(data);
       }
     } catch (err) {
-      console.warn('[Koda Innertube] Error parsing watch next radio:', err);
+      console.warn('[OurTube Innertube] Error parsing watch next radio:', err);
     }
 
     return tracks;
+  }
+
+  /**
+   * Fetches plain lyrics from YouTube Music's watch next lyrics tab if available
+   */
+  public async getSongLyrics(videoId: string): Promise<string | null> {
+    if (!videoId) return null;
+    try {
+      const data = await this.fetchInnerTubeEndpoint('next', { videoId });
+      const json = this.ensureJsonObject(data);
+      const tabs =
+        json?.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer?.watchNextTabbedResultsRenderer?.tabs;
+      const lyricsTab = tabs?.[1]?.tabRenderer;
+      const browseId = lyricsTab?.endpoint?.browseEndpoint?.browseId;
+      if (!browseId) return null;
+
+      const browseData = await this.fetchInnerTubeEndpoint('browse', { browseId });
+      const browseJson = this.ensureJsonObject(browseData);
+      const shelf =
+        browseJson?.contents?.sectionListRenderer?.contents?.[0]?.musicDescriptionShelfRenderer;
+      const desc = this.getNodeText(shelf?.description);
+      return desc || null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -261,6 +320,71 @@ export class InnertubeService {
     });
 
     return this.parseUserPlaylists(data);
+  }
+
+  /**
+   * Fetches the user's authentic listening history from YouTube Music (FEmusic_history)
+   */
+  public async getRecentlyPlayed(): Promise<TrackMetadata[]> {
+    try {
+      const data = await this.fetchInnerTubeEndpoint('browse', {
+        browseId: 'FEmusic_history'
+      });
+      if (!data) return [];
+      const json = this.ensureJsonObject(data);
+      const tracks: TrackMetadata[] = [];
+      const seenIds = new Set<string>();
+
+      const addRenderer = (r: any) => {
+        if (!r) return;
+        const videoId =
+          r.playlistItemData?.videoId ||
+          r.navigationEndpoint?.watchEndpoint?.videoId ||
+          r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
+          r.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
+
+        if (!videoId || seenIds.has(videoId)) return;
+        seenIds.add(videoId);
+
+        const title =
+          r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((x: any) => x.text).join('') || '';
+        const rawArtist =
+          r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((x: any) => x.text).join('') || '';
+        const artist = this.cleanArtistSubtitle(rawArtist) || 'YouTube Music';
+        const thumb =
+          r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
+          `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+        if (title) {
+          tracks.push({
+            id: videoId,
+            title: title.trim(),
+            artist,
+            duration: 210,
+            thumbnailUrl: thumb,
+            highResThumbnailUrl: sizedArtwork(thumb, 600)
+          });
+        }
+      };
+
+      const scan = (node: any) => {
+        if (!node || typeof node !== 'object') return;
+        if (node.musicResponsiveListItemRenderer) {
+          addRenderer(node.musicResponsiveListItemRenderer);
+        }
+        if (Array.isArray(node)) {
+          for (const item of node) scan(item);
+        } else {
+          for (const val of Object.values(node)) scan(val);
+        }
+      };
+
+      scan(json);
+      return tracks.slice(0, 30);
+    } catch (err) {
+      console.warn('[OurTube Innertube] Failed to fetch recently played:', err);
+      return [];
+    }
   }
 
   /**

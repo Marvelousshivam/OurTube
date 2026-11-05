@@ -744,7 +744,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onOpenPlaylist, onOpenAr
                       imageUrl: topResult.thumbnailUrl
                     });
                   } else {
-                    playTrack(topResult, results);
+                    playTrack(topResult);
                   }
                 }}
                 style={{
@@ -890,7 +890,7 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onOpenPlaylist, onOpenAr
                             imageUrl: track.thumbnailUrl
                           });
                         } else {
-                          playTrack(track, results);
+                          playTrack(track);
                         }
                       }}
                       onToggleLike={() => toggleLikeTrack(track)}

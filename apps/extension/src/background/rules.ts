@@ -1,5 +1,14 @@
 const CORS_RESPONSE: chrome.declarativeNetRequest.ModifyHeaderInfo[] = [
   { header: 'Access-Control-Allow-Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' },
+  { header: 'Access-Control-Allow-Credentials', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'true' },
+  { header: 'Access-Control-Expose-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' },
+  { header: 'Access-Control-Allow-Methods', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'GET, POST, OPTIONS, HEAD' },
+  { header: 'Access-Control-Allow-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' }
+];
+
+const VERCEL_CORS_RESPONSE: chrome.declarativeNetRequest.ModifyHeaderInfo[] = [
+  { header: 'Access-Control-Allow-Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'https://ourtube-zeta.vercel.app' },
+  { header: 'Access-Control-Allow-Credentials', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'true' },
   { header: 'Access-Control-Expose-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' },
   { header: 'Access-Control-Allow-Methods', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'GET, POST, OPTIONS, HEAD' },
   { header: 'Access-Control-Allow-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' }
@@ -200,8 +209,44 @@ export async function installDynamicRules() {
 
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: [1, 2, 3, 4, 5, 6, 7],
-      addRules: rules
+      removeRuleIds: [1, 2, 3, 4, 5, 6, 7, 20, 21],
+      addRules: [
+        ...rules,
+        {
+          id: 20,
+          priority: 3,
+          condition: {
+            urlFilter: '||www.youtube.com/youtubei/',
+            initiatorDomains: ['ourtube-zeta.vercel.app', 'vercel.app'],
+            resourceTypes: [
+              chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+              chrome.declarativeNetRequest.ResourceType.OTHER
+            ]
+          },
+          action: {
+            type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+            requestHeaders: impersonate('https://www.youtube.com'),
+            responseHeaders: VERCEL_CORS_RESPONSE
+          }
+        },
+        {
+          id: 21,
+          priority: 3,
+          condition: {
+            urlFilter: '||music.youtube.com/youtubei/',
+            initiatorDomains: ['ourtube-zeta.vercel.app', 'vercel.app'],
+            resourceTypes: [
+              chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+              chrome.declarativeNetRequest.ResourceType.OTHER
+            ]
+          },
+          action: {
+            type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+            requestHeaders: impersonate('https://music.youtube.com'),
+            responseHeaders: VERCEL_CORS_RESPONSE
+          }
+        }
+      ]
     });
     console.log('[OurTube Companion] Dynamic DNR rules installed successfully.');
   } catch (err) {

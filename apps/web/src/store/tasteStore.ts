@@ -114,6 +114,10 @@ export const useTasteStore = create<TasteStoreState>((set, get) => ({
         title: track.title,
         artist: track.artist,
         artistId: track.artistId,
+        album: track.album,
+        thumbnailUrl: track.thumbnailUrl,
+        highResThumbnailUrl: track.highResThumbnailUrl,
+        duration: track.duration,
         playedAt: Date.now(),
         playCount: (existing?.playCount || 0) + 1,
         completionRate: Math.max(completionRate, existing?.completionRate || 0)

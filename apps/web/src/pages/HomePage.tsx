@@ -22,6 +22,7 @@ export interface HomePageProps {
 export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist }) => {
   const [sections, setSections] = useState<HomeSection[]>([]);
   const [userPlaylists, setUserPlaylists] = useState<UserPlaylist[]>([]);
+  const [remoteHistory, setRemoteHistory] = useState<TrackMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [isWideScreen, setIsWideScreen] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
@@ -47,6 +48,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
     innertubeService
       .getUserPlaylists()
       .then((pls) => setUserPlaylists(pls))
+      .catch(() => {});
+
+    // Also load authentic YouTube Music listening history
+    innertubeService
+      .getRecentlyPlayed()
+      .then((items) => setRemoteHistory(items))
       .catch(() => {});
   };
 
@@ -166,14 +173,46 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
     return [];
   }, [likedTracks, history, sections]);
 
-  // Extract recent albums / collections from shelves
+  // Derive authentic Recently Played songs (merging local playback history with remote YouTube history)
+  const recentlyPlayed = useMemo(() => {
+    const list: TrackMetadata[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Local playback history (newest first)
+    for (const h of history) {
+      if (!h.trackId || seenIds.has(h.trackId)) continue;
+      seenIds.add(h.trackId);
+      const thumb =
+        h.thumbnailUrl || `https://i.ytimg.com/vi/${h.trackId}/hqdefault.jpg`;
+      list.push({
+        id: h.trackId,
+        title: h.title,
+        artist: h.artist,
+        album: h.album,
+        duration: h.duration || 210,
+        thumbnailUrl: thumb,
+        highResThumbnailUrl: sizedArtwork(thumb, 600)
+      });
+    }
+
+    // 2. YouTube Music remote listening history
+    for (const r of remoteHistory) {
+      if (!r.id || seenIds.has(r.id)) continue;
+      seenIds.add(r.id);
+      list.push(r);
+    }
+
+    return list.slice(0, 24);
+  }, [history, remoteHistory]);
+
+  // Extract recent albums / collections from shelves (only if at least 3)
   const recentAlbums = useMemo(() => {
     for (const s of sections) {
       if (/album|release|record|collection/i.test(s.title)) {
-        return s.items.slice(0, 8);
+        return s.items.length >= 3 ? s.items.slice(0, 10) : [];
       }
     }
-    return sections.length > 1 ? sections[1].items.slice(0, 8) : [];
+    return sections.length > 1 && sections[1].items.length >= 3 ? sections[1].items.slice(0, 10) : [];
   }, [sections]);
 
   // Extract tracks for "Jump back in"
@@ -228,8 +267,146 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
         />
       )}
 
-      {/* 2. Recent Albums Section (Matching Koda Screenshot) */}
-      {recentAlbums.length > 0 && (
+      {/* 2. Recently Played Songs Shelf (BitChord / YouTube Music / Apple Music standard) */}
+      {recentlyPlayed.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+              <h2
+                style={{
+                  fontSize: '22px',
+                  fontWeight: 800,
+                  letterSpacing: '-0.02em',
+                  margin: 0,
+                  color: 'var(--md-sys-color-on-surface)'
+                }}
+              >
+                Recently Played
+              </h2>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-outline)' }}>
+                {recentlyPlayed.length} songs
+              </span>
+            </div>
+          </div>
+
+          {/* Smooth horizontal scroll deck with no empty voids */}
+          <div
+            style={{
+              display: 'flex',
+              gap: isWideScreen ? '18px' : '14px',
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+              paddingBottom: '8px',
+              margin: '0 -4px',
+              padding: '0 4px 8px 4px'
+            }}
+          >
+            {recentlyPlayed.map((track) => {
+              const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+              return (
+                <div
+                  key={track.id}
+                  onClick={() => playTrack(track)}
+                  style={{
+                    flex: '0 0 auto',
+                    width: isWideScreen ? '170px' : '136px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'transform 180ms ease'
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+                >
+                  {/* Artwork Container */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      aspectRatio: '1/1',
+                      borderRadius: '18px',
+                      overflow: 'hidden',
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)'
+                    }}
+                  >
+                    <img
+                      src={track.highResThumbnailUrl || track.thumbnailUrl}
+                      alt={track.title}
+                      loading="lazy"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        display: 'block'
+                      }}
+                    />
+
+                    {/* Active playing indicator or play overlay */}
+                    {isThisPlaying && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <span
+                          className="material-symbols-rounded"
+                          style={{
+                            fontSize: '32px',
+                            color: 'var(--md-sys-color-primary, #ffffff)'
+                          }}
+                        >
+                          equalizer
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Metadata */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span
+                      style={{
+                        fontSize: isWideScreen ? '14px' : '13px',
+                        fontWeight: 700,
+                        color: 'var(--md-sys-color-on-surface)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={track.title}
+                    >
+                      {track.title}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        color: 'var(--md-sys-color-outline)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={track.artist}
+                    >
+                      {track.artist}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* 3. Recent Albums Section (Only rendered if >= 3 albums exist to prevent empty voids) */}
+      {recentAlbums.length >= 3 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h2
@@ -243,36 +420,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
             >
               Recent Albums
             </h2>
-            <button
-              onClick={() => {}}
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                color: 'var(--md-sys-color-on-surface)',
-                border: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'transform 120ms ease'
-              }}
-              title="View all recent albums"
-            >
-              <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
-                arrow_forward
-              </span>
-            </button>
           </div>
 
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: isWideScreen
-                ? 'repeat(auto-fill, minmax(200px, 1fr))'
-                : 'repeat(auto-fill, minmax(150px, 1fr))',
-              gap: isWideScreen ? '20px' : '14px'
+              display: 'flex',
+              gap: isWideScreen ? '18px' : '14px',
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+              paddingBottom: '8px'
             }}
           >
             {recentAlbums.map((item, idx) => (
@@ -280,12 +436,14 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                 key={`${item.id}-${idx}`}
                 onClick={() => handleCardClick(item, recentAlbums)}
                 style={{
+                  flex: '0 0 auto',
+                  width: isWideScreen ? '170px' : '136px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '8px',
                   cursor: 'pointer',
                   userSelect: 'none',
-                  transition: 'transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1)'
+                  transition: 'transform 180ms ease'
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
                 onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
@@ -294,10 +452,10 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                   style={{
                     width: '100%',
                     aspectRatio: '1 / 1',
-                    borderRadius: '28px',
+                    borderRadius: '20px',
                     overflow: 'hidden',
                     backgroundColor: 'var(--md-sys-color-surface-container-high)',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
                     position: 'relative'
                   }}
                 >
