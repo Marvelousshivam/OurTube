@@ -3,8 +3,11 @@ import { writeTtml } from '../lyrics/ttml';
 import { innertubeService } from './innertubeService';
 
 export class LyricsService {
+  private lyricsCache = new Map<string, LyricsData | null>();
+  private inFlightLyrics = new Map<string, Promise<LyricsData | null>>();
+
   /**
-   * Fetches rich synchronized lyrics for a track.
+   * Fetches rich synchronized lyrics for a track with hot in-memory caching.
    * Tier 1: lrc.red (Apple Music word-by-word synced TTML karaoke)
    * Tier 2: LRCLIB (line-synced LRC converted to Apple Music TTML)
    * Tier 3: YouTube Music official lyrics tab (plain lyrics converted to TTML)
@@ -17,7 +20,36 @@ export class LyricsService {
   ): Promise<LyricsData | null> {
     const cleanTitle = this.cleanTrackTitle(trackName);
     const cleanArtist = this.cleanArtistName(artistName);
+    const cacheKey = videoId || `${cleanTitle}:::${cleanArtist}`;
 
+    if (this.lyricsCache.has(cacheKey)) {
+      return this.lyricsCache.get(cacheKey) || null;
+    }
+
+    if (this.inFlightLyrics.has(cacheKey)) {
+      return this.inFlightLyrics.get(cacheKey)!;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const result = await this._doFetchLyrics(cleanTitle, cleanArtist, durationSeconds, videoId);
+        this.lyricsCache.set(cacheKey, result);
+        return result;
+      } finally {
+        this.inFlightLyrics.delete(cacheKey);
+      }
+    })();
+
+    this.inFlightLyrics.set(cacheKey, fetchPromise);
+    return fetchPromise;
+  }
+
+  private async _doFetchLyrics(
+    cleanTitle: string,
+    cleanArtist: string,
+    durationSeconds: number,
+    videoId?: string
+  ): Promise<LyricsData | null> {
     // 1. Tier 1: lrc.red (Word-by-word Apple Music TTML)
     try {
       const redResult = await this.fetchFromLrcRed(cleanTitle, cleanArtist, durationSeconds);

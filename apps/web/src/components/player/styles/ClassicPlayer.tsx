@@ -349,7 +349,7 @@ export const ClassicPlayer: React.FC<ClassicPlayerProps> = ({
               position: 'relative',
               width: '100%',
               aspectRatio: '1 / 1',
-              maxWidth: 'min(100%, 280px)',
+              maxWidth: 'clamp(140px, 24vh, 240px)',
               margin: '0 auto',
               borderRadius: isPlaying ? '24px' : '30px',
               overflow: 'hidden',

@@ -1,7 +1,7 @@
 export type PlaybackMode = 'music' | 'video';
 export type VideoQuality = 'auto' | '1080p' | '720p' | '480p' | '360p';
 export type RepeatMode = 'off' | 'all' | 'one';
-export type PlayerStyle = 'EDITORIAL' | 'CLASSIC' | 'BENTO' | 'CANVAS' | 'GESTURE' | 'STICKER' | 'HERO';
+export type PlayerStyle = 'EDITORIAL' | 'CLASSIC' | 'BENTO' | 'CANVAS' | 'GESTURE' | 'STICKER' | 'HERO' | 'MORPH' | 'DIAL';
 
 export type QueueTier = 'context' | 'user' | 'autoplay';
 

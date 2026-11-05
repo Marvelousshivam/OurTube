@@ -766,6 +766,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                   checked={settings.reduceMotion}
                   onChange={settings.setReduceMotion}
                 />
+
+                <SettingsDivider />
+
+                <SettingsToggleRow
+                  icon="graphic_eq"
+                  title="Bottom Soundwave Equalizer"
+                  subtitle="Animate an organic audio equalizer wave at the bottom of the player"
+                  checked={settings.bottomEqualizer}
+                  onChange={settings.setBottomEqualizer}
+                />
               </SettingsCard>
             </div>
           )}

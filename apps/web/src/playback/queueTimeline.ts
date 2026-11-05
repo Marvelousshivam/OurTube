@@ -23,15 +23,31 @@ export function asEntry(
 
 /**
  * Builds a queue from an album, playlist, or source context.
+ * BitChord Invariant: [Preceding Context] + [Selected Track] + [Preserved USER_QUEUE] + [Following Context Tracks]
  */
 export function buildContextQueue(
   tracks: TrackMetadata[],
   startIndex: number = 0,
-  sourceTitle?: string
+  sourceTitle?: string,
+  preservedUserQueue: QueueEntry[] = []
 ): { queue: QueueEntry[]; queueIndex: number } {
+  if (tracks.length === 0) {
+    return { queue: [], queueIndex: 0 };
+  }
   const entries = tracks.map((t) => asEntry(t, 'context', sourceTitle));
   const validIndex = Math.max(0, Math.min(startIndex, entries.length - 1));
-  return { queue: entries, queueIndex: validIndex };
+  const precedingContext = entries.slice(0, validIndex);
+  const selected = entries[validIndex];
+  const followingContext = entries.slice(validIndex + 1);
+
+  const queue = [
+    ...precedingContext,
+    selected,
+    ...preservedUserQueue,
+    ...followingContext
+  ];
+
+  return { queue, queueIndex: precedingContext.length };
 }
 
 /**

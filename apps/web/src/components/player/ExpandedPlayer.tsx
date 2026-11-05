@@ -13,6 +13,8 @@ import { BentoPlayer } from './styles/BentoPlayer';
 import { CanvasPlayer } from './styles/CanvasPlayer';
 import { GesturePlayer } from './styles/GesturePlayer';
 import { HeroPlayer } from './styles/HeroPlayer';
+import { MorphPlayer } from './styles/MorphPlayer';
+import { DialPlayer } from './styles/DialPlayer';
 
 export const ExpandedPlayer: React.FC = () => {
   const {
@@ -250,11 +252,57 @@ export const ExpandedPlayer: React.FC = () => {
             currentTime={currentTime}
             duration={duration}
             isLiked={liked}
+            repeatMode={repeatMode}
+            isShuffled={isShuffled}
             onTogglePlay={togglePlay}
             onSeek={seek}
             onNext={nextTrack}
             onPrev={prevTrack}
             onToggleLike={() => toggleLikeTrack(currentTrack)}
+            onToggleRepeat={toggleRepeat}
+            onToggleShuffle={toggleShuffle}
+            onOpenLyrics={openLyricsTab}
+            onOpenQueue={openQueueTab}
+          />
+        );
+      case 'MORPH':
+        return (
+          <MorphPlayer
+            track={currentTrack}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            isLiked={liked}
+            repeatMode={repeatMode}
+            isShuffled={isShuffled}
+            onTogglePlay={togglePlay}
+            onSeek={seek}
+            onNext={nextTrack}
+            onPrev={prevTrack}
+            onToggleLike={() => toggleLikeTrack(currentTrack)}
+            onToggleRepeat={toggleRepeat}
+            onToggleShuffle={toggleShuffle}
+            onOpenLyrics={openLyricsTab}
+            onOpenQueue={openQueueTab}
+          />
+        );
+      case 'DIAL':
+        return (
+          <DialPlayer
+            track={currentTrack}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            isLiked={liked}
+            repeatMode={repeatMode}
+            isShuffled={isShuffled}
+            onTogglePlay={togglePlay}
+            onSeek={seek}
+            onNext={nextTrack}
+            onPrev={prevTrack}
+            onToggleLike={() => toggleLikeTrack(currentTrack)}
+            onToggleRepeat={toggleRepeat}
+            onToggleShuffle={toggleShuffle}
             onOpenLyrics={openLyricsTab}
             onOpenQueue={openQueueTab}
           />
@@ -461,7 +509,7 @@ export const ExpandedPlayer: React.FC = () => {
             transition: 'all 400ms cubic-bezier(0.2, 0.9, 0.3, 1)'
           }}
         >
-          {/* Primary Stage: The Chosen Player Style (Editorial / Classic / Bento / Hero / Canvas / Gesture) */}
+          {/* Primary Stage: The Chosen Player Style (Editorial / Classic / Bento / Hero / Canvas / Gesture / Morph / Dial) */}
           <div
             style={{
               display: 'flex',
@@ -470,7 +518,10 @@ export const ExpandedPlayer: React.FC = () => {
               alignItems: 'center',
               height: '100%',
               minHeight: 0,
-              overflow: 'hidden',
+              maxHeight: '100%',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              scrollbarWidth: 'none',
               position: 'relative',
               width: '100%',
               margin: '0 auto'

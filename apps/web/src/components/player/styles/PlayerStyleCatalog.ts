@@ -50,5 +50,19 @@ export const PLAYER_STYLE_CATALOG: PlayerStyleInfo[] = [
     subtitle: 'Full-bleed cover over tonal deck with morphing disc',
     icon: 'stars',
     shapeName: 'hero'
+  },
+  {
+    style: 'MORPH',
+    label: 'Morph',
+    subtitle: 'Animated organic shape with wavy progress ring',
+    icon: 'blur_on',
+    shapeName: 'blob'
+  },
+  {
+    style: 'DIAL',
+    label: 'Dial',
+    subtitle: '360° precision radial chronograph gauge',
+    icon: 'speed',
+    shapeName: 'dial'
   }
 ];

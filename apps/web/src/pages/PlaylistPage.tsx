@@ -56,14 +56,14 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({ playlist, onBack, on
 
   const handlePlayAll = () => {
     if (tracks.length > 0) {
-      playTrack(tracks[0], tracks);
+      playTrack(tracks[0], tracks, playlist.title);
     }
   };
 
   const handleShuffle = () => {
     if (tracks.length > 0) {
       const shuffled = [...tracks].sort(() => Math.random() - 0.5);
-      playTrack(shuffled[0], shuffled);
+      playTrack(shuffled[0], shuffled, playlist.title);
     }
   };
 
@@ -245,7 +245,7 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({ playlist, onBack, on
                 imageUrl={track.thumbnailUrl}
                 isPlaying={isTrackPlaying}
                 isLiked={liked}
-                onPlay={() => playTrack(track, tracks)}
+                onPlay={() => playTrack(track, tracks, playlist.title)}
                 onToggleLike={() => toggleLikeTrack(track)}
                 onArtistClick={() => onOpenArtist?.({ name: track.artist })}
               />

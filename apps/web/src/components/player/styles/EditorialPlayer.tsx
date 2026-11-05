@@ -486,7 +486,7 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
             style={{
               position: 'relative',
               width: '100%',
-              maxWidth: 'min(100%, 260px)',
+              maxWidth: 'clamp(140px, 24vh, 230px)',
               aspectRatio: '1 / 1',
               margin: '0 auto',
               backgroundColor: 'var(--md-sys-color-surface-container-high)',
@@ -518,12 +518,15 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                 fontFamily: "'Playfair Display', Georgia, serif",
                 fontStyle: 'italic',
                 fontWeight: 800,
-                fontSize: 'clamp(22px, 2.6vw, 32px)',
-                lineHeight: 1.08,
+                fontSize: 'clamp(20px, 2.4vh, 28px)',
+                lineHeight: 1.1,
                 letterSpacing: '-0.02em',
-                margin: '0 0 4px 0',
+                margin: '0 0 3px 0',
                 color: 'var(--md-sys-color-on-surface)',
-                textWrap: 'balance'
+                textWrap: 'balance',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
               }}
             >
               {track.title}
@@ -547,14 +550,14 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
           </div>
 
           {/* Control Cluster */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(6px, 1.2vh, 10px)', width: '100%' }}>
             {/* Row 1: Large PAUSE / PLAY Word Pill + Circular Skip Next Button */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.2vh, 10px)', width: '100%' }}>
               <button
                 onClick={onTogglePlay}
                 style={{
                   flex: 1,
-                  height: '56px',
+                  height: 'clamp(46px, 5.6vh, 56px)',
                   borderRadius: '9999px',
                   backgroundColor: 'var(--md-sys-color-primary)',
                   color: 'var(--md-sys-color-on-primary)',
@@ -578,8 +581,8 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
               <button
                 onClick={onNext}
                 style={{
-                  width: '56px',
-                  height: '56px',
+                  width: 'clamp(46px, 5.6vh, 56px)',
+                  height: 'clamp(46px, 5.6vh, 56px)',
                   borderRadius: '50%',
                   backgroundColor: 'var(--md-sys-color-primary)',
                   color: 'var(--md-sys-color-on-primary)',
@@ -596,19 +599,19 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                 onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
                 onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
               >
-                <span className="material-symbols-rounded" style={{ fontSize: '28px' }}>
+                <span className="material-symbols-rounded" style={{ fontSize: '26px' }}>
                   skip_next
                 </span>
               </button>
             </div>
 
             {/* Row 2: Circular Skip Previous Button + Waveform Sonic Bar Scrubber */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.2vh, 10px)', width: '100%' }}>
               <button
                 onClick={onPrev}
                 style={{
-                  width: '56px',
-                  height: '56px',
+                  width: 'clamp(46px, 5.6vh, 56px)',
+                  height: 'clamp(46px, 5.6vh, 56px)',
                   borderRadius: '50%',
                   backgroundColor: 'var(--md-sys-color-primary)',
                   color: 'var(--md-sys-color-on-primary)',
@@ -625,7 +628,7 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                 onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
                 onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
               >
-                <span className="material-symbols-rounded" style={{ fontSize: '28px' }}>
+                <span className="material-symbols-rounded" style={{ fontSize: '26px' }}>
                   skip_previous
                 </span>
               </button>
@@ -633,7 +636,7 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
               <div
                 style={{
                   flex: 1,
-                  height: '56px',
+                  height: 'clamp(46px, 5.6vh, 56px)',
                   padding: '0 14px',
                   borderRadius: '18px',
                   backgroundColor: 'var(--md-sys-color-surface-container)',

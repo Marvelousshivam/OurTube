@@ -80,15 +80,90 @@ export interface StreamOptions {
   mode?: 'music' | 'video';
 }
 
+interface CachedStreamEntry {
+  response: StreamResolutionResponse;
+  expiresAt: number;
+}
+
+// In-memory high-performance LRU-like stream cache for seamless 0ms instant playback
+const streamResolutionCache = new Map<string, CachedStreamEntry>();
+const inFlightStreamResolutions = new Map<string, Promise<StreamResolutionResponse>>();
+
+function getCacheKey(options: StreamOptions): string {
+  return `${options.videoId}:${options.quality || 'auto'}:${options.mode || 'music'}`;
+}
+
+export function getCachedStream(options: StreamOptions): StreamResolutionResponse | null {
+  const key = getCacheKey(options);
+  const entry = streamResolutionCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    streamResolutionCache.delete(key);
+    return null;
+  }
+  return entry.response;
+}
+
+export function setCachedStream(options: StreamOptions, response: StreamResolutionResponse): void {
+  if (!response?.audioUrl) return;
+  const key = getCacheKey(options);
+  const ttlMs = (response.expiresInSeconds ? response.expiresInSeconds - 120 : 21600) * 1000;
+  streamResolutionCache.set(key, {
+    response,
+    expiresAt: Date.now() + Math.max(60000, ttlMs)
+  });
+}
+
+/**
+ * Pre-fetches and caches direct audio stream URLs in background so upcoming queue items play seamlessly.
+ */
+export async function prefetchStream(options: StreamOptions): Promise<StreamResolutionResponse> {
+  const cached = getCachedStream(options);
+  if (cached) return cached;
+  return resolveStream(options);
+}
+
 /**
  * Resolves a high-quality direct audio/video stream URL.
  * Architecture:
- * 1. Same-origin Vite dev server stream endpoint (/api/resolve-stream) -> 0ms local Node.js resolution
- * 2. In-browser direct VISIONOS Innertube resolution with simpleRequestFetch -> 0ms preflight, direct googlevideo.com URLs
- * 3. Companion extension bridge fallback -> handles signed-in SAPISID sessions
- * 4. In-browser signature deciphering fallback
+ * 1. In-memory hot cache -> 0ms instant retrieval for queued/pre-buffered tracks
+ * 2. Same-origin Vite dev server stream endpoint (/api/resolve-stream) -> 0ms local Node.js resolution
+ * 3. In-browser direct VISIONOS Innertube resolution with simpleRequestFetch -> direct googlevideo.com URLs
+ * 4. Companion extension bridge fallback -> handles signed-in SAPISID sessions
+ * 5. In-browser signature deciphering fallback
  */
 export async function resolveStream(options: StreamOptions): Promise<StreamResolutionResponse> {
+  const { videoId, quality = 'auto', mode = 'music' } = options;
+  const cacheKey = getCacheKey(options);
+
+  // 0. Check hot memory cache
+  const cached = getCachedStream(options);
+  if (cached) {
+    return cached;
+  }
+
+  // De-duplicate concurrent in-flight resolutions for the same videoId
+  if (inFlightStreamResolutions.has(cacheKey)) {
+    return inFlightStreamResolutions.get(cacheKey)!;
+  }
+
+  const resolutionPromise = (async () => {
+    try {
+      const res = await _doResolveStream(options);
+      if (res?.audioUrl) {
+        setCachedStream(options, res);
+      }
+      return res;
+    } finally {
+      inFlightStreamResolutions.delete(cacheKey);
+    }
+  })();
+
+  inFlightStreamResolutions.set(cacheKey, resolutionPromise);
+  return resolutionPromise;
+}
+
+async function _doResolveStream(options: StreamOptions): Promise<StreamResolutionResponse> {
   const { videoId, quality = 'auto', mode = 'music' } = options;
 
   // 1. Companion extension bridge (direct host permissions in background, 0 CORS, supports signed sessions)

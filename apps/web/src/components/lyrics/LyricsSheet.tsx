@@ -34,13 +34,30 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
   const clockRef = useRef<LyricClock | null>(null);
   const lastTimeRef = useRef<number>(currentTime);
   const discontinuityRef = useRef<number>(0);
+  const lastRequestedTrackIdRef = useRef<string | null>(null);
 
-  // Ensure lyrics are loaded for current track
+  // Clean transition: ensure stale lyrics are flushed and new lyrics are requested exactly once per track
   useEffect(() => {
-    if (currentTrack && !lyricsData && !isLyricsLoading) {
-      loadLyricsForTrack(currentTrack);
+    if (!currentTrack) {
+      lastRequestedTrackIdRef.current = null;
+      if (amContainerRef.current) amContainerRef.current.innerHTML = '';
+      return;
     }
-  }, [currentTrack, lyricsData, isLyricsLoading, loadLyricsForTrack]);
+
+    if (lastRequestedTrackIdRef.current !== currentTrack.id) {
+      lastRequestedTrackIdRef.current = currentTrack.id;
+      // Immediately clear prior lyrics DOM on track change
+      if (amContainerRef.current) {
+        amContainerRef.current.innerHTML = '';
+      }
+      amElementRef.current = null;
+      clockRef.current = null;
+
+      if (!lyricsData && !isLyricsLoading) {
+        loadLyricsForTrack(currentTrack);
+      }
+    }
+  }, [currentTrack?.id, lyricsData, isLyricsLoading, loadLyricsForTrack]);
 
   // Mount & configure <am-lyrics> Web Component dynamically
   useEffect(() => {
@@ -52,12 +69,29 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
       .then(() => {
         if (!mounted || !amContainerRef.current) return;
 
+        // Monkey-patch AmLyrics character motion predicate to protect Brahmic/Indic scripts
+        // Prevents browser rendering dotted circles (◌) on isolated combining vowel marks (matras)
+        const AmLyricsClass: any = customElements.get('am-lyrics');
+        if (AmLyricsClass && !AmLyricsClass.__indicGraphemePatched) {
+          const originalMode = AmLyricsClass.characterMotionMode;
+          AmLyricsClass.characterMotionMode = function (text: string, durationMs: number, background = false) {
+            // Keep complex Indic & Brahmic scripts intact: Devanagari (\u0900-\u097F), Bengali (\u0980-\u09FF),
+            // Gurmukhi (\u0A00-\u0A7F), Gujarati (\u0A80-\u0AFF), Oriya, Tamil, Telugu, Kannada, Malayalam, Thai, etc.
+            if (/[\u0900-\u109F\u0590-\u08FF\uA800-\uA82F]/.test(text)) {
+              return 'none';
+            }
+            return originalMode ? originalMode.call(this, text, durationMs, background) : 'none';
+          };
+          AmLyricsClass.__indicGraphemePatched = true;
+        }
+
         amContainerRef.current.innerHTML = '';
 
         const el = document.createElement('am-lyrics') as any;
         el.style.width = '100%';
         el.style.height = '100%';
         el.style.display = 'block';
+        el.style.fontFamily = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Noto Sans Devanagari", "Segoe UI", sans-serif';
 
         // Apple Music typography & animation parameters
         el.autoScroll = true;
@@ -262,7 +296,9 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
             style={{
               width: '100%',
               height: '100%',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              paddingBottom: '32px',
+              boxSizing: 'border-box'
             }}
           />
         )}

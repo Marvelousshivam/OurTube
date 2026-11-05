@@ -24,6 +24,7 @@ export interface SettingsState {
   ambientBackground: boolean;
   ambientIntensity: number; // 0.2 to 1.0
   reduceMotion: boolean;
+  bottomEqualizer: boolean;
 
   // Playback & Audio Quality
   audioQuality: AudioStreamQuality;
@@ -56,6 +57,7 @@ export interface SettingsState {
   setAmbientBackground: (enabled: boolean) => void;
   setAmbientIntensity: (intensity: number) => void;
   setReduceMotion: (reduce: boolean) => void;
+  setBottomEqualizer: (enabled: boolean) => void;
 
   setAudioQuality: (quality: AudioStreamQuality) => void;
   setVideoQuality: (quality: 'auto' | '1080p' | '720p' | '480p') => void;
@@ -114,6 +116,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   ambientBackground: localStorage.getItem('koda_ambient_bg') !== 'false',
   ambientIntensity: getStored<number>('koda_ambient_intensity', 0.8),
   reduceMotion: getStored<boolean>('koda_reduce_motion', false),
+  bottomEqualizer: localStorage.getItem('koda_bottom_equalizer') !== 'false',
 
   // Playback Defaults
   audioQuality: getStored<AudioStreamQuality>('koda_audio_quality', 'high'),
@@ -202,6 +205,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setReduceMotion: (reduce: boolean) => {
     setStored('koda_reduce_motion', reduce);
     set({ reduceMotion: reduce });
+  },
+
+  setBottomEqualizer: (enabled: boolean) => {
+    localStorage.setItem('koda_bottom_equalizer', String(enabled));
+    set({ bottomEqualizer: enabled });
   },
 
   // Playback Actions
