@@ -84,6 +84,21 @@ export const ExpandedPlayer: React.FC = () => {
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
+  // Synchronize playerStore sheet open state with desktop companion state
+  useEffect(() => {
+    if (isWideScreen && isExpanded) {
+      if (isLyricsOpen) {
+        setShowCompanion(true);
+        setDesktopSideTab('lyrics');
+      } else if (isQueueOpen) {
+        setShowCompanion(true);
+        setDesktopSideTab('queue');
+      } else {
+        setShowCompanion(false);
+      }
+    }
+  }, [isLyricsOpen, isQueueOpen, isWideScreen, isExpanded]);
+
   if (!isExpanded || !currentTrack) return null;
 
   const liked = isLiked(currentTrack.id);
@@ -98,19 +113,33 @@ export const ExpandedPlayer: React.FC = () => {
 
   const openLyricsTab = () => {
     if (isWideScreen) {
-      setShowCompanion(true);
-      setDesktopSideTab('lyrics');
+      if (showCompanion && desktopSideTab === 'lyrics') {
+        setShowCompanion(false);
+        setLyricsOpen(false);
+      } else {
+        setShowCompanion(true);
+        setDesktopSideTab('lyrics');
+        setLyricsOpen(true);
+        setQueueOpen(false);
+      }
     } else {
-      setLyricsOpen(true);
+      setLyricsOpen(!isLyricsOpen);
     }
   };
 
   const openQueueTab = () => {
     if (isWideScreen) {
-      setShowCompanion(true);
-      setDesktopSideTab('queue');
+      if (showCompanion && desktopSideTab === 'queue') {
+        setShowCompanion(false);
+        setQueueOpen(false);
+      } else {
+        setShowCompanion(true);
+        setDesktopSideTab('queue');
+        setQueueOpen(true);
+        setLyricsOpen(false);
+      }
     } else {
-      setQueueOpen(true);
+      setQueueOpen(!isQueueOpen);
     }
   };
 
@@ -129,7 +158,7 @@ export const ExpandedPlayer: React.FC = () => {
             isShuffled={isShuffled}
             stageMode={stageMode}
             isWideScreen={isWideScreen}
-            showLyrics={isWideScreen ? showCompanion : isLyricsOpen}
+            showLyrics={isWideScreen ? (showCompanion && desktopSideTab === 'lyrics') : isLyricsOpen}
             onTogglePlay={togglePlay}
             onSeek={seek}
             onNext={nextTrack}
@@ -137,7 +166,7 @@ export const ExpandedPlayer: React.FC = () => {
             onToggleLike={() => toggleLikeTrack(currentTrack)}
             onToggleRepeat={toggleRepeat}
             onToggleShuffle={toggleShuffle}
-            onToggleLyrics={isWideScreen ? toggleCompanion : () => setLyricsOpen(!isLyricsOpen)}
+            onToggleLyrics={openLyricsTab}
             onOpenQueue={openQueueTab}
           />
         );
@@ -319,8 +348,8 @@ export const ExpandedPlayer: React.FC = () => {
             setQueueOpen(false);
           }}
           style={{
-            background: 'rgba(255, 255, 255, 0.08)',
-            border: 'none',
+            background: 'var(--md-sys-color-surface-container)',
+            border: '1px solid var(--md-sys-color-outline-variant)',
             color: 'var(--md-sys-color-on-surface)',
             cursor: 'pointer',
             padding: '8px',
@@ -334,10 +363,10 @@ export const ExpandedPlayer: React.FC = () => {
           }}
           title="Collapse player"
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
+            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+            (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container)';
           }}
         >
           <span className="material-symbols-rounded" style={{ fontSize: '26px' }}>
@@ -354,8 +383,8 @@ export const ExpandedPlayer: React.FC = () => {
           <button
             onClick={() => setIsStylePickerOpen(true)}
             style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: 'none',
+              background: 'var(--md-sys-color-surface-container)',
+              border: '1px solid var(--md-sys-color-outline-variant)',
               borderRadius: '50%',
               width: '40px',
               height: '40px',
@@ -368,10 +397,10 @@ export const ExpandedPlayer: React.FC = () => {
             }}
             title={`Style: ${playerStyle}`}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
+              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container)';
             }}
           >
             <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
@@ -383,8 +412,8 @@ export const ExpandedPlayer: React.FC = () => {
           <button
             onClick={toggleBrowserFullScreen}
             style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: 'none',
+              background: 'var(--md-sys-color-surface-container)',
+              border: '1px solid var(--md-sys-color-outline-variant)',
               borderRadius: '50%',
               width: '40px',
               height: '40px',
@@ -397,10 +426,10 @@ export const ExpandedPlayer: React.FC = () => {
             }}
             title={isFullScreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
+              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container)';
             }}
           >
             <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
@@ -475,13 +504,17 @@ export const ExpandedPlayer: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   paddingBottom: '16px',
-                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderBottom: '1px solid var(--md-sys-color-outline-variant)',
                   flexShrink: 0
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button
-                    onClick={() => setDesktopSideTab('queue')}
+                    onClick={() => {
+                      setDesktopSideTab('queue');
+                      setQueueOpen(true);
+                      setLyricsOpen(false);
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -491,12 +524,12 @@ export const ExpandedPlayer: React.FC = () => {
                       backgroundColor:
                         desktopSideTab === 'queue'
                           ? 'var(--md-sys-color-primary)'
-                          : 'rgba(255, 255, 255, 0.06)',
+                          : 'var(--md-sys-color-surface-container)',
                       color:
                         desktopSideTab === 'queue'
                           ? 'var(--md-sys-color-on-primary)'
                           : 'var(--md-sys-color-on-surface)',
-                      border: 'none',
+                      border: '1px solid var(--md-sys-color-outline-variant)',
                       fontSize: '12px',
                       fontWeight: 800,
                       cursor: 'pointer',
@@ -510,7 +543,11 @@ export const ExpandedPlayer: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={() => setDesktopSideTab('lyrics')}
+                    onClick={() => {
+                      setDesktopSideTab('lyrics');
+                      setLyricsOpen(true);
+                      setQueueOpen(false);
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -520,12 +557,12 @@ export const ExpandedPlayer: React.FC = () => {
                       backgroundColor:
                         desktopSideTab === 'lyrics'
                           ? 'var(--md-sys-color-primary)'
-                          : 'rgba(255, 255, 255, 0.06)',
+                          : 'var(--md-sys-color-surface-container)',
                       color:
                         desktopSideTab === 'lyrics'
                           ? 'var(--md-sys-color-on-primary)'
                           : 'var(--md-sys-color-on-surface)',
-                      border: 'none',
+                      border: '1px solid var(--md-sys-color-outline-variant)',
                       fontSize: '12px',
                       fontWeight: 800,
                       cursor: 'pointer',
@@ -539,7 +576,11 @@ export const ExpandedPlayer: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={() => setDesktopSideTab('stats')}
+                    onClick={() => {
+                      setDesktopSideTab('stats');
+                      setLyricsOpen(false);
+                      setQueueOpen(false);
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -549,12 +590,12 @@ export const ExpandedPlayer: React.FC = () => {
                       backgroundColor:
                         desktopSideTab === 'stats'
                           ? 'var(--md-sys-color-primary)'
-                          : 'rgba(255, 255, 255, 0.06)',
+                          : 'var(--md-sys-color-surface-container)',
                       color:
                         desktopSideTab === 'stats'
                           ? 'var(--md-sys-color-on-primary)'
                           : 'var(--md-sys-color-on-surface)',
-                      border: 'none',
+                      border: '1px solid var(--md-sys-color-outline-variant)',
                       fontSize: '12px',
                       fontWeight: 800,
                       cursor: 'pointer',
@@ -570,10 +611,14 @@ export const ExpandedPlayer: React.FC = () => {
 
                 {/* Companion Close Button */}
                 <button
-                  onClick={() => setShowCompanion(false)}
+                  onClick={() => {
+                    setShowCompanion(false);
+                    setLyricsOpen(false);
+                    setQueueOpen(false);
+                  }}
                   style={{
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    background: 'var(--md-sys-color-surface-container)',
+                    border: '1px solid var(--md-sys-color-outline-variant)',
                     borderRadius: '50%',
                     width: '36px',
                     height: '36px',
@@ -586,10 +631,10 @@ export const ExpandedPlayer: React.FC = () => {
                   }}
                   title="Hide companion panel"
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.14)';
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
+                    (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--md-sys-color-surface-container)';
                   }}
                 >
                   <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>

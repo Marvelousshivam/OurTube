@@ -55,7 +55,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
           transform: 'rotate(-12deg)',
           overflow: 'hidden',
           backgroundColor: 'var(--md-sys-color-surface-container-high)',
-          boxShadow: '0 28px 72px -12px rgba(0, 0, 0, 0.65)',
+          boxShadow: '0 20px 48px -8px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))',
           cursor: 'pointer',
           transition: 'transform 400ms cubic-bezier(0.2, 0.9, 0.3, 1)',
           position: 'relative',
@@ -84,7 +84,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
           borderRadius: '50%',
           overflow: 'hidden',
           backgroundColor: 'var(--md-sys-color-surface-container-high)',
-          boxShadow: '0 18px 48px rgba(0, 0, 0, 0.6)',
+          boxShadow: '0 12px 32px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.18))',
           border: '3px solid var(--md-sys-color-background)',
           cursor: 'pointer',
           zIndex: 3,
@@ -113,7 +113,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
           borderRadius: '50%',
           overflow: 'hidden',
           backgroundColor: 'var(--md-sys-color-surface-container-high)',
-          boxShadow: '0 18px 48px rgba(0, 0, 0, 0.6)',
+          boxShadow: '0 12px 32px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.18))',
           border: '3px solid var(--md-sys-color-background)',
           cursor: 'pointer',
           zIndex: 3,
@@ -174,7 +174,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                   style={{
                     fontSize: '15px',
                     fontWeight: 500,
-                    color: 'var(--md-sys-color-outline)',
+                    color: 'var(--md-sys-color-on-surface-variant)',
                     margin: '14px 0 0 0',
                     maxWidth: '480px',
                     lineHeight: 1.4
@@ -184,23 +184,23 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                 </p>
               </div>
 
-              {/* Big Tactile Play / Shuffle Button with Dice Badge (Matching Koda) */}
-              <div style={{ position: 'relative' }}>
+              {/* Big Tactile Play Button (Material 3 Expressive FAB) */}
+              <div>
                 <button
                   onClick={handlePlayClick}
                   style={{
-                    width: '74px',
-                    height: '74px',
+                    width: '68px',
+                    height: '68px',
                     borderRadius: '50%',
-                    backgroundColor: 'var(--md-sys-color-primary-container, rgba(255, 255, 255, 0.16))',
-                    color: 'var(--md-sys-color-on-primary-container, var(--md-sys-color-on-surface))',
+                    backgroundColor: 'var(--md-sys-color-primary)',
+                    color: 'var(--md-sys-color-on-primary)',
                     border: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
-                    transition: 'transform 150ms ease'
+                    boxShadow: '0 8px 24px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))',
+                    transition: 'transform 150ms ease, box-shadow 150ms ease'
                   }}
                   title="Play Your Mix"
                   onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.94)')}
@@ -208,34 +208,11 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                 >
                   <span
                     className="material-symbols-rounded"
-                    style={{ fontSize: '38px', fontVariationSettings: "'FILL' 1", marginLeft: '4px' }}
+                    style={{ fontSize: '36px', fontVariationSettings: "'FILL' 1", marginLeft: '4px' }}
                   >
                     play_arrow
                   </span>
                 </button>
-
-                {/* Dice / Shuffle Mini-Badge */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: '-4px',
-                    right: '-4px',
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--md-sys-color-surface-container-highest, rgba(0,0,0,0.6))',
-                    color: 'var(--md-sys-color-on-surface)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                    border: '1.5px solid var(--md-sys-color-background)'
-                  }}
-                >
-                  <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>
-                    casino
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -258,20 +235,20 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                   <button
                     key={t.id}
                     onClick={() => onTrackClick?.(t)}
-                    className="glass-pill"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px',
                       padding: '6px 14px 6px 6px',
                       borderRadius: '9999px',
-                      border: 'none',
-                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid var(--md-sys-color-outline-variant)',
+                      backgroundColor: 'var(--md-sys-color-surface-container)',
                       color: 'var(--md-sys-color-on-surface)',
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 600,
-                      maxWidth: '240px'
+                      maxWidth: '240px',
+                      transition: 'all 150ms ease'
                     }}
                     title={`${t.title} • ${t.artist}`}
                   >
@@ -317,7 +294,7 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                 style={{
                   fontSize: '13px',
                   fontWeight: 500,
-                  color: 'var(--md-sys-color-outline)',
+                  color: 'var(--md-sys-color-on-surface-variant)',
                   margin: '8px 0 0 0',
                   lineHeight: 1.3
                 }}
@@ -326,21 +303,22 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
               </p>
             </div>
 
-            {/* Play Button Pill */}
-            <div style={{ position: 'relative' }}>
+            {/* Play Button */}
+            <div>
               <button
                 onClick={handlePlayClick}
                 style={{
-                  width: '64px',
-                  height: '64px',
+                  width: '60px',
+                  height: '60px',
                   borderRadius: '50%',
-                  backgroundColor: 'var(--md-sys-color-primary-container, rgba(255, 255, 255, 0.16))',
-                  color: 'var(--md-sys-color-on-primary-container, var(--md-sys-color-on-surface))',
+                  backgroundColor: 'var(--md-sys-color-primary)',
+                  color: 'var(--md-sys-color-on-primary)',
                   border: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  boxShadow: '0 6px 18px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))'
                 }}
               >
                 <span
@@ -350,26 +328,6 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                   play_arrow
                 </span>
               </button>
-
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '-2px',
-                  right: '-2px',
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '6px',
-                  backgroundColor: 'rgba(0,0,0,0.6)',
-                  color: 'var(--md-sys-color-on-surface)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <span className="material-symbols-rounded" style={{ fontSize: '14px' }}>
-                  casino
-                </span>
-              </div>
             </div>
           </div>
 

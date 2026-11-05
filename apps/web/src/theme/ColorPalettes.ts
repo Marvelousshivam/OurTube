@@ -118,6 +118,10 @@ export function buildPaletteTokens(
     '--md-sys-color-on-tertiary-container': hexFromArgb(MaterialDynamicColors.onTertiaryContainer.getArgb(scheme)),
     '--md-sys-color-surface': hexFromArgb(MaterialDynamicColors.surface.getArgb(scheme)),
     '--md-sys-color-on-surface': hexFromArgb(MaterialDynamicColors.onSurface.getArgb(scheme)),
+    '--md-sys-color-surface-variant': hexFromArgb(MaterialDynamicColors.surfaceVariant.getArgb(scheme)),
+    '--md-sys-color-on-surface-variant': hexFromArgb(MaterialDynamicColors.onSurfaceVariant.getArgb(scheme)),
+    '--md-sys-color-surface-dim': hexFromArgb(MaterialDynamicColors.surfaceDim.getArgb(scheme)),
+    '--md-sys-color-surface-bright': hexFromArgb(MaterialDynamicColors.surfaceBright.getArgb(scheme)),
     '--md-sys-color-surface-container-lowest': hexFromArgb(MaterialDynamicColors.surfaceContainerLowest.getArgb(scheme)),
     '--md-sys-color-surface-container-low': hexFromArgb(MaterialDynamicColors.surfaceContainerLow.getArgb(scheme)),
     '--md-sys-color-surface-container': hexFromArgb(MaterialDynamicColors.surfaceContainer.getArgb(scheme)),
@@ -126,7 +130,11 @@ export function buildPaletteTokens(
     '--md-sys-color-outline': hexFromArgb(MaterialDynamicColors.outline.getArgb(scheme)),
     '--md-sys-color-outline-variant': hexFromArgb(MaterialDynamicColors.outlineVariant.getArgb(scheme)),
     '--md-sys-color-background': hexFromArgb(MaterialDynamicColors.background.getArgb(scheme)),
-    '--md-sys-color-on-background': hexFromArgb(MaterialDynamicColors.onBackground.getArgb(scheme))
+    '--md-sys-color-on-background': hexFromArgb(MaterialDynamicColors.onBackground.getArgb(scheme)),
+    '--md-sys-color-inverse-surface': hexFromArgb(MaterialDynamicColors.inverseSurface.getArgb(scheme)),
+    '--md-sys-color-inverse-on-surface': hexFromArgb(MaterialDynamicColors.inverseOnSurface.getArgb(scheme)),
+    '--md-sys-color-inverse-primary': hexFromArgb(MaterialDynamicColors.inversePrimary.getArgb(scheme)),
+    '--md-sys-elevation-shadow': dark ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.08)'
   };
 
   return tokens;
@@ -144,5 +152,13 @@ export function applyPaletteTheme(
   const root = document.documentElement;
   for (const [key, val] of Object.entries(tokens)) {
     root.style.setProperty(key, val);
+  }
+  root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  if (dark) {
+    root.classList.remove('light-mode');
+    root.classList.add('dark-mode');
+  } else {
+    root.classList.remove('dark-mode');
+    root.classList.add('light-mode');
   }
 }

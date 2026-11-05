@@ -21,8 +21,8 @@ export const COLOR_TOKENS = {
 
   surface: 'var(--md-sys-color-surface)',
   onSurface: 'var(--md-sys-color-on-surface)',
-  surfaceVariant: 'var(--md-sys-color-surface-variant, var(--md-sys-color-surface-container-high))',
-  onSurfaceVariant: 'var(--md-sys-color-on-surface-variant, #c4c7c5)',
+  surfaceVariant: 'var(--md-sys-color-surface-variant)',
+  onSurfaceVariant: 'var(--md-sys-color-on-surface-variant)',
 
   surfaceContainerLowest: 'var(--md-sys-color-surface-container-lowest)',
   surfaceContainerLow: 'var(--md-sys-color-surface-container-low)',

@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   useSettingsStore,
   ThemeMode,
-  AudioStreamQuality,
-  HomeLayoutMode
+  AudioStreamQuality
 } from '../store/settingsStore';
 import {
   SettingsCard,
@@ -17,6 +16,7 @@ import {
 import { DiscordPreviewCard } from '../components/settings/DiscordPreviewCard';
 import { PlayerStyleGallery } from '../components/settings/PlayerStyleGallery';
 import { PaletteStudio } from '../components/theme/PaletteStudio';
+import { KeyboardShortcutsModal } from '../components/settings/KeyboardShortcutsModal';
 import { APP_PALETTES, PaletteStyle } from '../theme/ColorPalettes';
 import { bridgeClient } from '../api/bridgeClient';
 import { AuthState, YtChannel } from '../types';
@@ -26,7 +26,6 @@ export type SettingsTabId =
   | 'appearance'
   | 'playback'
   | 'discord'
-  | 'content'
   | 'storage'
   | 'about';
 
@@ -52,7 +51,7 @@ const CATEGORIES: { id: SettingsTabId; label: string; icon: string; getSubtitle:
     id: 'playback',
     label: 'Playback & Audio Quality',
     icon: 'graphic_eq',
-    getSubtitle: (s) => `${s.audioQuality === 'high' ? 'High (256kbps)' : s.audioQuality === 'normal' ? 'Normal (128kbps)' : 'Data Saver'}`
+    getSubtitle: (s) => `${s.audioQuality === 'high' ? 'High (256k AAC)' : s.audioQuality === 'normal' ? 'Normal (128k)' : 'Data Saver'}`
   },
   {
     id: 'discord',
@@ -61,16 +60,10 @@ const CATEGORIES: { id: SettingsTabId; label: string; icon: string; getSubtitle:
     getSubtitle: (s) => (s.discordRpcEnabled ? (s.discordIncognito ? 'Incognito' : 'Broadcasting active') : 'Disabled')
   },
   {
-    id: 'content',
-    label: 'Content & Feeds',
-    icon: 'video_library',
-    getSubtitle: (s) => `${capitalize(s.homeLayoutMode)} Home`
-  },
-  {
     id: 'storage',
-    label: 'Storage & Cache',
+    label: 'Storage & Data',
     icon: 'folder',
-    getSubtitle: (s) => s.cacheSize || '14.2 MB cached'
+    getSubtitle: (s) => s.storageUsed || 'Calculating...'
   },
   {
     id: 'about',
@@ -91,10 +84,27 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
   const [searchQuery, setSearchQuery] = useState('');
   const [authState, setAuthState] = useState<AuthState>(bridgeClient.getAuthState());
   const [isPaletteStudioOpen, setIsPaletteStudioOpen] = useState(false);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+
+  // Storage and backup states
+  const [storageEstimate, setStorageEstimate] = useState<{ usedMb: string; quotaMb: string }>({
+    usedMb: 'Calculating...',
+    quotaMb: '...'
+  });
   const [cacheClearedToast, setCacheClearedToast] = useState(false);
-  const [cacheSize] = useState('14.2 MB cached');
+  const [importToast, setImportToast] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Diagnostics states
+  const [pingResult, setPingResult] = useState<string | null>(null);
+  const [isPinging, setIsPinging] = useState(false);
+
+  const refreshStorage = () => {
+    settings.getStorageEstimate().then(setStorageEstimate);
+  };
 
   useEffect(() => {
+    refreshStorage();
     bridgeClient.refreshAuth().then(setAuthState);
     const unsub = bridgeClient.onAvailabilityChange((available) => {
       if (available) {
@@ -105,6 +115,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
   }, []);
 
   const currentPalette = APP_PALETTES.find((p) => p.id === settings.selectedPaletteId) || APP_PALETTES[0];
+  const QUICK_PALETTES = APP_PALETTES.slice(0, 7);
 
   const handleSelectChannel = async (channel: YtChannel) => {
     try {
@@ -115,9 +126,39 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
     }
   };
 
-  const handleClearCache = () => {
+  const handleClearCache = async () => {
+    await settings.clearLocalCache();
     setCacheClearedToast(true);
+    refreshStorage();
     setTimeout(() => setCacheClearedToast(false), 3000);
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ok = await settings.importUserData(file);
+    if (ok) {
+      setImportToast('Taste profile restored successfully!');
+      setTimeout(() => setImportToast(null), 3500);
+    } else {
+      setImportToast('Failed to parse backup file');
+      setTimeout(() => setImportToast(null), 3500);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handlePingBridge = async () => {
+    setIsPinging(true);
+    const start = performance.now();
+    try {
+      await bridgeClient.sendRequest('KODA_BRIDGE_PING', {}, 2500);
+      const ms = Math.round(performance.now() - start);
+      setPingResult(`${ms} ms roundtrip · Companion extension ready`);
+    } catch {
+      setPingResult('Companion extension unreachable');
+    } finally {
+      setIsPinging(false);
+    }
   };
 
   const currentSubtitleContext = {
@@ -127,11 +168,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
     audioQuality: settings.audioQuality,
     discordRpcEnabled: settings.discordRpcEnabled,
     discordIncognito: settings.discordIncognito,
-    homeLayoutMode: settings.homeLayoutMode,
-    cacheSize
+    storageUsed: storageEstimate.usedMb
   };
 
-  // Filter categories by search
+  // Filter categories by search query
   const filteredCategories = CATEGORIES.filter(
     (c) =>
       c.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -147,10 +187,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
         maxWidth: '1280px',
         margin: '0 auto',
         width: '100%',
-        gap: '24px'
+        gap: '24px',
+        paddingBottom: '160px' // Adequate clearance for bottom MiniPlayer
       }}
     >
-      {/* Top App Bar & Search Pill */}
+      {/* Top Header & Search Filter Pill */}
       <div
         style={{
           display: 'flex',
@@ -158,15 +199,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
           justifyContent: 'space-between',
           gap: '16px',
           flexWrap: 'wrap',
-          paddingBottom: '8px',
+          paddingBottom: '14px',
           borderBottom: '1px solid var(--md-sys-color-outline-variant)'
         }}
       >
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: 'var(--md-sys-color-on-surface)' }}>
             Settings
           </h1>
-          <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)', fontWeight: 600 }}>
+          <span style={{ fontSize: '13px', color: 'var(--md-sys-color-on-surface-variant)', fontWeight: 500 }}>
             OurTube Experience Studio & Integrations
           </span>
         </div>
@@ -206,7 +247,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              style={{ background: 'transparent', border: 'none', color: 'var(--md-sys-color-outline)', cursor: 'pointer' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--md-sys-color-outline)', cursor: 'pointer', padding: 0 }}
             >
               <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>
                 close
@@ -325,7 +366,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
             })}
           </SettingsCard>
 
-          {/* Quick Diagnostics Widget */}
+          {/* Extension Status Indicator Card */}
           <div
             style={{
               marginTop: '12px',
@@ -338,7 +379,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
               justifyContent: 'space-between'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div
                 style={{
                   width: '8px',
@@ -349,18 +390,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 }}
               />
               <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--md-sys-color-on-surface)' }}>
-                {bridgeClient.getIsAvailable() ? 'Extension Bridge Active' : 'Guest Mode'}
+                {bridgeClient.getIsAvailable() ? 'Companion Extension Active' : 'Extension Missing'}
               </span>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)', fontWeight: 600 }}>
-              MV3
+            <span style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)', fontWeight: 700 }}>
+              v1.0.0
             </span>
           </div>
         </div>
 
         {/* Right Detail Pane */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
-          {/* ================= ACCOUNT & IDENTITY ================= */}
+          {/* ================= 1. ACCOUNT & IDENTITY ================= */}
           {activeTab === 'account' && (
             <div>
               <SettingsSectionHeader
@@ -434,10 +475,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 />
               </SettingsCard>
 
-              {/* Account Switcher Roster */}
+              {/* Multi-Account Channel Switcher Roster */}
               <SettingsSectionHeader
                 title="Switch Channel or Google Account"
-                subtitle="Select which identity should be active for playlists and feeds"
+                subtitle="Select which identity should be active for playlists, feeds, and recommendations"
               />
               <SettingsCard>
                 {authState.accounts && authState.accounts.length > 0 ? (
@@ -510,19 +551,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                                     </span>
                                   )}
                                 </div>
-                                {chan.handle && (
-                                  <span style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)' }}>
-                                    {chan.handle}
-                                  </span>
-                                )}
+                                <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                                  {chan.handle || `Account ${chan.authUser}`}
+                                </span>
                               </div>
                             </div>
 
                             {isCurrent && (
-                              <span
-                                className="material-symbols-rounded"
-                                style={{ fontSize: '20px', color: 'var(--md-sys-color-primary)', fontWeight: 800 }}
-                              >
+                              <span className="material-symbols-rounded" style={{ fontSize: '20px', color: 'var(--md-sys-color-primary)' }}>
                                 check_circle
                               </span>
                             )}
@@ -533,41 +569,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                   ))
                 ) : (
                   <div style={{ padding: '24px', textAlign: 'center', color: 'var(--md-sys-color-outline)' }}>
-                    No accounts loaded yet. Ensure OurTube Companion extension is installed and you are signed in to YouTube Music.
+                    No Google accounts detected. Please ensure the extension is enabled.
                   </div>
                 )}
-
-                <SettingsDivider />
-
-                <SettingsRow
-                  icon="add"
-                  title="Add Another Google Account"
-                  value="Opens Google sign-in to attach an additional session"
-                  onClick={() => {
-                    window.open(
-                      'https://accounts.google.com/AddSession?service=youtube&continue=https://music.youtube.com/',
-                      '_blank'
-                    );
-                  }}
-                  showChevron
-                />
-
-                <SettingsDivider />
-
-                <SettingsRow
-                  icon="refresh"
-                  title="Refresh YouTube Music Session"
-                  value="Re-reads credentials and refreshes all playlists"
-                  onClick={() => {
-                    bridgeClient.refreshAuth().then(setAuthState);
-                  }}
-                  showChevron
-                />
               </SettingsCard>
             </div>
           )}
 
-          {/* ================= APPEARANCE & CUSTOMIZATION ================= */}
+          {/* ================= 2. APPEARANCE & CUSTOMIZATION ================= */}
           {activeTab === 'appearance' && (
             <div>
               <SettingsSectionHeader
@@ -591,43 +600,104 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
 
                 <SettingsDivider />
 
-                {/* Color Palette Row with direct studio trigger */}
-                <SettingsRow
-                  icon="palette"
-                  title="Color Palette Studio"
-                  value={`${currentPalette.name} · ${settings.paletteStyle.replace('_', ' ')} (26 HCT Palettes)`}
-                  detail="Tap to choose from 26 curated dynamic palettes or extract from album art"
-                  onClick={() => setIsPaletteStudioOpen(true)}
-                  showChevron
-                  trailing={
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <div
-                        style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '50%',
-                          backgroundColor: currentPalette.seedPrimary
-                        }}
-                      />
-                      <div
-                        style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '50%',
-                          backgroundColor: currentPalette.seedSecondary
-                        }}
-                      />
-                      <div
-                        style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '50%',
-                          backgroundColor: currentPalette.seedTertiary
-                        }}
-                      />
+                {/* Color Palette Row with direct Studio Trigger & Quick Swatches */}
+                <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <span className="material-symbols-rounded" style={{ fontSize: '24px', color: 'var(--md-sys-color-primary)' }}>
+                        palette
+                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--md-sys-color-on-surface)' }}>
+                          Color Palette Studio
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                          Active: {currentPalette.name} ({settings.paletteStyle.replace('_', ' ')})
+                        </span>
+                      </div>
                     </div>
-                  }
-                />
+
+                    <button
+                      onClick={() => setIsPaletteStudioOpen(true)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '9999px',
+                        backgroundColor: 'var(--md-sys-color-surface-container-highest)',
+                        border: '1px solid var(--md-sys-color-outline-variant)',
+                        color: 'var(--md-sys-color-primary)',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      Browse 26 Palettes
+                      <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>
+                        chevron_right
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Quick-Pick Swatch Strip */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      overflowX: 'auto',
+                      scrollbarWidth: 'none',
+                      padding: '4px 0'
+                    }}
+                  >
+                    {QUICK_PALETTES.map((pal) => {
+                      const isSelected = settings.selectedPaletteId === pal.id;
+                      return (
+                        <div
+                          key={pal.id}
+                          onClick={() => settings.setSelectedPaletteId(pal.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 14px',
+                            borderRadius: '9999px',
+                            cursor: 'pointer',
+                            backgroundColor: isSelected
+                              ? 'var(--md-sys-color-primary-container)'
+                              : 'rgba(255, 255, 255, 0.04)',
+                            border: isSelected
+                              ? '1px solid var(--md-sys-color-primary)'
+                              : '1px solid rgba(255, 255, 255, 0.08)',
+                            transition: 'all 150ms ease'
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              backgroundColor: pal.seedPrimary
+                            }}
+                          />
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: isSelected ? 800 : 600,
+                              color: isSelected
+                                ? 'var(--md-sys-color-on-primary-container)'
+                                : 'var(--md-sys-color-on-surface)',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {pal.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 <SettingsDivider />
 
@@ -648,7 +718,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 />
               </SettingsCard>
 
-              {/* Player Styles Section (Koda's 6 iconic styles) */}
+              {/* Player Styles Section (Koda's iconic styles) */}
               <SettingsSectionHeader
                 title="Player Styles"
                 subtitle="Select the geometric layout for the expanded now-playing screen"
@@ -700,7 +770,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
             </div>
           )}
 
-          {/* ================= PLAYBACK & AUDIO QUALITY ================= */}
+          {/* ================= 3. PLAYBACK & AUDIO QUALITY ================= */}
           {activeTab === 'playback' && (
             <div>
               <SettingsSectionHeader
@@ -711,7 +781,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 <SettingsChoiceRow<AudioStreamQuality>
                   icon="high_quality"
                   title="Audio Stream Quality"
-                  subtitle="Higher bitrates consume more bandwidth but provide pristine fidelity"
+                  subtitle="Higher bitrates provide pristine fidelity; data saver protects cellular bandwidth"
                   selected={settings.audioQuality}
                   onSelect={settings.setAudioQuality}
                   options={[
@@ -725,8 +795,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
 
                 <SettingsToggleRow
                   icon="graphic_eq"
-                  title="Audio Normalization"
-                  subtitle="ReplayGain dynamic loudness leveling across different tracks"
+                  title="Audio Loudness Normalization"
+                  subtitle="Real Web Audio compressor leveling across tracks so volume is uniform"
                   checked={settings.audioNormalization}
                   onChange={settings.setAudioNormalization}
                 />
@@ -740,7 +810,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 <SettingsToggleRow
                   icon="tune"
                   title="Crossfade"
-                  subtitle="Smoothly fade between outgoing and incoming tracks"
+                  subtitle="Smoothly fade volume between outgoing and incoming tracks"
                   checked={settings.crossfadeEnabled}
                   onChange={settings.setCrossfadeEnabled}
                 />
@@ -784,7 +854,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
             </div>
           )}
 
-          {/* ================= DISCORD RICH PRESENCE ================= */}
+          {/* ================= 4. DISCORD RICH PRESENCE ================= */}
           {activeTab === 'discord' && (
             <div>
               <SettingsSectionHeader
@@ -804,9 +874,27 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                   <>
                     <SettingsDivider />
                     <SettingsToggleRow
+                      icon="schedule"
+                      title="Show Elapsed Time"
+                      subtitle="Display playback timer and track length on Discord"
+                      checked={settings.discordShowElapsed}
+                      onChange={settings.setDiscordShowElapsed}
+                    />
+
+                    <SettingsDivider />
+                    <SettingsToggleRow
+                      icon="image"
+                      title="Show Album Artwork"
+                      subtitle="Display album art in rich presence widget"
+                      checked={settings.discordShowArtwork}
+                      onChange={settings.setDiscordShowArtwork}
+                    />
+
+                    <SettingsDivider />
+                    <SettingsToggleRow
                       icon="visibility_off"
-                      title="Incognito Discord Presence"
-                      subtitle="Temporarily hide playback from Discord without disconnecting"
+                      title="Incognito Presence"
+                      subtitle="Pause presence broadcasting temporarily without disconnecting"
                       checked={settings.discordIncognito}
                       onChange={settings.setDiscordIncognito}
                     />
@@ -814,98 +902,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 )}
               </SettingsCard>
 
-              {/* Live Discord Card Mockup */}
+              {/* Interactive Live Discord Preview Card */}
               <SettingsSectionHeader
-                title="Discord Profile Preview"
-                subtitle="Real-time simulation of how your status appears to friends"
+                title="Live Presence Preview"
+                subtitle="How your status appears to friends on desktop and mobile Discord"
               />
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <DiscordPreviewCard />
-              </div>
-
-              {/* Presence Customization Options */}
-              <SettingsSectionHeader
-                title="Presence Customization"
-                subtitle="Choose what details are visible on your Discord card"
-              />
-              <SettingsCard>
-                <SettingsToggleRow
-                  icon="timer"
-                  title="Show Elapsed & Remaining Time"
-                  subtitle="Display progress timeline and countdown bar"
-                  checked={settings.discordShowElapsed}
-                  onChange={settings.setDiscordShowElapsed}
-                />
-
-                <SettingsDivider />
-
-                <SettingsToggleRow
-                  icon="image"
-                  title="Show High-Resolution Album Art"
-                  subtitle="Mirror artwork to Discord's CDN for high-density displays"
-                  checked={settings.discordShowArtwork}
-                  onChange={settings.setDiscordShowArtwork}
-                />
-
-                <SettingsDivider />
-
-                <SettingsToggleRow
-                  icon="smart_button"
-                  title="Show Interactive Action Buttons"
-                  subtitle="Includes 'Listen on YouTube Music' and 'Open OurTube' links"
-                  checked={settings.discordShowButtons}
-                  onChange={settings.setDiscordShowButtons}
-                />
-              </SettingsCard>
+              <DiscordPreviewCard />
             </div>
           )}
 
-          {/* ================= CONTENT & FEEDS ================= */}
-          {activeTab === 'content' && (
-            <div>
-              <SettingsSectionHeader
-                title="Home & Discovery"
-                subtitle="Organize your landing page feeds and music recommendations"
-              />
-              <SettingsCard>
-                <SettingsChoiceRow<HomeLayoutMode>
-                  icon="grid_view"
-                  title="Home Screen Layout"
-                  subtitle="Choose how quick picks, radios, and playlists are presented"
-                  selected={settings.homeLayoutMode}
-                  onSelect={settings.setHomeLayoutMode}
-                  options={[
-                    { id: 'spotlight', label: 'Spotlight (Koda Paged)', icon: 'auto_awesome' },
-                    { id: 'classic', label: 'Classic Grid', icon: 'grid_view' }
-                  ]}
-                />
-
-                <SettingsDivider />
-
-                <SettingsToggleRow
-                  icon="explicit"
-                  title="Filter Explicit Content"
-                  subtitle="Hide songs and videos marked with explicit advisory tags"
-                  checked={settings.filterExplicit}
-                  onChange={settings.setFilterExplicit}
-                />
-              </SettingsCard>
-            </div>
-          )}
-
-          {/* ================= STORAGE & CACHE ================= */}
+          {/* ================= 5. STORAGE & DATA ================= */}
           {activeTab === 'storage' && (
             <div>
               <SettingsSectionHeader
                 title="Device Storage & Cache"
-                subtitle="Manage artwork, lyrics, and locally saved metadata"
+                subtitle="Real-time storage measurement and offline data management"
               />
               <SettingsCard>
                 <SettingsRow
                   icon="folder"
-                  title="Image & Artwork Cache"
-                  value={cacheSize}
-                  detail="Cached album art, artist headers, and thumbnails for fast offline viewing"
+                  title="Local Storage Footprint"
+                  value={storageEstimate.usedMb}
+                  detail={`Device quota: ${storageEstimate.quotaMb}. Cached cover art, lyrics TTML, and offline assets.`}
                 />
 
                 <SettingsDivider />
@@ -913,9 +931,43 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 <SettingsRow
                   icon="delete_sweep"
                   title="Clear Artwork & Lyrics Cache"
-                  value={cacheClearedToast ? 'Cache cleared successfully!' : 'Free up local memory'}
+                  value={cacheClearedToast ? 'Cache Purged Successfully!' : 'Free up local memory'}
+                  detail="Purges CacheStorage blobs while preserving your liked songs and playlists"
                   onClick={handleClearCache}
                   showChevron
+                />
+              </SettingsCard>
+
+              <SettingsSectionHeader
+                title="Data Portability & Backups"
+                subtitle="Export or restore your taste profile, liked songs, and settings"
+              />
+              <SettingsCard>
+                <SettingsRow
+                  icon="file_download"
+                  title="Export Taste Profile & Liked Tracks"
+                  value="Download backup JSON"
+                  detail="Saves your complete listening history and liked tracks to a portable JSON file"
+                  onClick={settings.exportUserData}
+                  showChevron
+                />
+
+                <SettingsDivider />
+
+                <SettingsRow
+                  icon="file_upload"
+                  title="Import Backup File"
+                  value={importToast || 'Upload backup JSON'}
+                  detail="Merge a previously saved backup into your taste profile"
+                  onClick={() => fileInputRef.current?.click()}
+                  showChevron
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportFile}
+                  style={{ display: 'none' }}
                 />
 
                 <SettingsDivider />
@@ -923,10 +975,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 <SettingsRow
                   icon="restart_alt"
                   title="Reset All Preferences to Defaults"
-                  value="Restore all theme, player, and playback settings"
+                  value="Factory Reset"
                   destructive
+                  detail="Clears custom themes, audio settings, and restores initial defaults"
                   onClick={() => {
-                    if (window.confirm('Are you sure you want to reset all OurTube settings to default values?')) {
+                    if (window.confirm('Are you sure you want to reset all OurTube settings to defaults?')) {
                       settings.resetToDefaults();
                     }
                   }}
@@ -936,12 +989,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
             </div>
           )}
 
-          {/* ================= SYSTEM & ABOUT ================= */}
+          {/* ================= 6. SYSTEM & ABOUT ================= */}
           {activeTab === 'about' && (
             <div>
               <SettingsSectionHeader
                 title="About OurTube"
-                subtitle="Material 3 Expressive Music & Video Experience"
+                subtitle="Material 3 Expressive Music Experience"
               />
               <SettingsCard>
                 <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -970,7 +1023,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                       Material 3 Expressive edition with HCT color science
                     </span>
                     <span style={{ fontSize: '12px', color: 'var(--md-sys-color-primary)', fontWeight: 700 }}>
-                      Inspired by Koda by Ivor & BitChord by Kushagra
+                      Engineered after Koda & BitChord
                     </span>
                   </div>
                 </div>
@@ -981,7 +1034,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                   icon="extension"
                   title="OurTube Companion Extension"
                   value={bridgeClient.getIsAvailable() ? 'Connected · v1.0.0 Active' : 'Extension Missing'}
-                  detail="Enables zero-CORS streaming, YouTube Music InnerTube session authentication, and high-bitrate playback"
+                  detail={pingResult || 'Enables zero-CORS streaming, YouTube Music multi-account auth, and unencrypted playback'}
                   trailing={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <a
@@ -1008,7 +1061,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                         Download Zip
                       </a>
                       <button
-                        onClick={() => bridgeClient.refreshAuth().then(setAuthState)}
+                        onClick={handlePingBridge}
+                        disabled={isPinging}
                         style={{
                           padding: '6px 14px',
                           borderRadius: '9999px',
@@ -1020,7 +1074,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                           fontWeight: 700
                         }}
                       >
-                        Ping Bridge
+                        {isPinging ? 'Pinging...' : 'Ping Test'}
                       </button>
                     </div>
                   }
@@ -1029,19 +1083,30 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                 <SettingsDivider />
 
                 <SettingsRow
+                  icon="keyboard"
+                  title="Keyboard Shortcuts"
+                  value="View Cheat Sheet"
+                  detail="Inspect desktop player controls and navigation hotkeys"
+                  onClick={() => setIsShortcutsModalOpen(true)}
+                  showChevron
+                />
+
+                <SettingsDivider />
+
+                <SettingsRow
                   icon="code"
-                  title="Innertube Client Version"
+                  title="Innertube Client Profile"
                   value="WEB_REMIX 1.20251006.03.00"
-                  detail="Authentic YouTube Music desktop client spoofing"
+                  detail="Official YouTube Music client profile with signed SAPISID auth"
                 />
 
                 <SettingsDivider />
 
                 <SettingsRow
                   icon="open_in_new"
-                  title="Koda GitHub Repository"
-                  value="https://github.com/Ivorisnoob/Koda"
-                  onClick={() => window.open('https://github.com/Ivorisnoob/Koda', '_blank')}
+                  title="GitHub Repository"
+                  value="https://github.com/Marvelousshivam/OurTube"
+                  onClick={() => window.open('https://github.com/Marvelousshivam/OurTube', '_blank')}
                   showChevron
                 />
               </SettingsCard>
@@ -1050,9 +1115,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
         </div>
       </div>
 
-      {/* Palette Studio Modal if triggered */}
+      {/* Palette Studio Modal */}
       {isPaletteStudioOpen && (
         <PaletteStudio onClose={() => setIsPaletteStudioOpen(false)} />
+      )}
+
+      {/* Keyboard Shortcuts Modal */}
+      {isShortcutsModalOpen && (
+        <KeyboardShortcutsModal onClose={() => setIsShortcutsModalOpen(false)} />
       )}
     </div>
   );

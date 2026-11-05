@@ -8,7 +8,8 @@ import { artistPhotoService } from '../api/artistPhotoService';
 import { SHAPES } from '../design-system/tokens';
 import {
   COLOR_TOKENS,
-  DSTrackRow
+  DSTrackRow,
+  M3LoadingIndicator
 } from '../design-system';
 
 export interface SearchPageProps {
@@ -303,16 +304,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onOpenPlaylist, onOpenAr
           />
 
           {loading && (
-            <span
-              className="material-symbols-rounded"
-              style={{
-                animation: 'spin 1s linear infinite',
-                color: 'var(--md-sys-color-primary)',
-                fontSize: '22px'
-              }}
-            >
-              progress_activity
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}>
+              <M3LoadingIndicator size="sm" />
+            </div>
           )}
 
           {query && !loading && (
@@ -714,6 +708,13 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onOpenPlaylist, onOpenAr
       {/* 3. Search Results State (When Query Is Present) */}
       {query && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          {/* Active Search Loading State */}
+          {loading && results.length === 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '260px' }}>
+              <M3LoadingIndicator contained size="lg" message={`Searching for "${query}"...`} />
+            </div>
+          )}
+
           {/* Top Result Bento Card */}
           {topResult && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>

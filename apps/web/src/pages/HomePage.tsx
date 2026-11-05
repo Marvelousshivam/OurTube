@@ -11,7 +11,8 @@ import {
   COLOR_TOKENS,
   SHAPES,
   MediaCard,
-  DSAvatar
+  DSAvatar,
+  M3LoadingIndicator
 } from '../design-system';
 
 export interface HomePageProps {
@@ -283,7 +284,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               >
                 Recently Played
               </h2>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-outline)' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-on-surface-variant)' }}>
                 {recentlyPlayed.length} songs
               </span>
             </div>
@@ -328,8 +329,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                       aspectRatio: '1/1',
                       borderRadius: '18px',
                       overflow: 'hidden',
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)'
+                      backgroundColor: 'var(--md-sys-color-surface-container)',
+                      boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.12))'
                     }}
                   >
                     <img
@@ -388,7 +389,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                       style={{
                         fontSize: '12px',
                         fontWeight: 500,
-                        color: 'var(--md-sys-color-outline)',
+                        color: 'var(--md-sys-color-on-surface-variant)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
@@ -519,13 +520,14 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               width: '36px',
               height: '36px',
               borderRadius: '50%',
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              backgroundColor: 'var(--md-sys-color-surface-container)',
               color: 'var(--md-sys-color-on-surface)',
-              border: 'none',
+              border: '1px solid var(--md-sys-color-outline-variant)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'all 150ms ease'
             }}
             title="View all playlists"
           >
@@ -571,11 +573,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                 width: '100%',
                 aspectRatio: '1 / 1',
                 borderRadius: '26px',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                backgroundColor: 'var(--md-sys-color-surface-container)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+                boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.08))',
                 position: 'relative'
               }}
             >
@@ -590,7 +593,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.3)'
+                  boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0,0,0,0.15))'
                 }}
               >
                 <span className="material-symbols-rounded" style={{ fontSize: '30px', fontVariationSettings: "'FILL' 1" }}>
@@ -602,7 +605,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--md-sys-color-on-surface)' }}>
                 Liked songs
               </span>
-              <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--md-sys-color-outline)', marginTop: '2px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--md-sys-color-on-surface-variant)', marginTop: '2px' }}>
                 {likedTracks.length} songs
               </span>
             </div>
@@ -627,14 +630,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                 width: '100%',
                 aspectRatio: '1 / 1',
                 borderRadius: '26px',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                backgroundColor: 'var(--md-sys-color-surface-container)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)'
+                boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.08))'
               }}
             >
-              <span className="material-symbols-rounded" style={{ fontSize: '36px', color: 'var(--md-sys-color-outline)' }}>
+              <span className="material-symbols-rounded" style={{ fontSize: '36px', color: 'var(--md-sys-color-on-surface-variant)' }}>
                 queue_music
               </span>
             </div>
@@ -642,7 +646,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--md-sys-color-on-surface)' }}>
                 Your Likes
               </span>
-              <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--md-sys-color-outline)', marginTop: '2px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--md-sys-color-on-surface-variant)', marginTop: '2px' }}>
                 You
               </span>
             </div>
@@ -939,15 +943,10 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            height: '240px',
-            gap: '12px',
-            color: COLOR_TOKENS.onSurfaceVariant
+            minHeight: '340px'
           }}
         >
-          <span className="material-symbols-rounded" style={{ animation: 'spin 1s linear infinite', fontSize: '32px' }}>
-            progress_activity
-          </span>
-          <span>Loading recommendations...</span>
+          <M3LoadingIndicator contained size="lg" message="Curating your personal mix & recommendations..." />
         </div>
       )}
 

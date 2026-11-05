@@ -6,3 +6,4 @@ export * from './components/DSAvatar';
 export * from './components/DSChip';
 export * from './components/DSTrackRow';
 export * from './components/DSSectionHeader';
+export * from '../components/common/M3LoadingIndicator';

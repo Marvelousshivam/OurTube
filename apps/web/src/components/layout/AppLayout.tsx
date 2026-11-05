@@ -15,8 +15,13 @@ import { bridgeClient, ExtensionConnectionState } from '../../api/bridgeClient';
 import { ExtensionRequiredGate } from '../extension/ExtensionRequiredGate';
 import { discordPresenceManager } from '../../api/discordPresence';
 import { useTasteStore } from '../../store/tasteStore';
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { M3LoadingIndicator } from '../common/M3LoadingIndicator';
+import { KeyboardShortcutsModal } from '../settings/KeyboardShortcutsModal';
 
 export const AppLayout: React.FC = () => {
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  useKeyboardShortcuts({ onOpenShortcuts: () => setIsShortcutsModalOpen(true) });
   const [bridgeState, setBridgeState] = useState<ExtensionConnectionState>(bridgeClient.getConnectionState());
   const [isBridgeConnected, setIsBridgeConnected] = useState(bridgeClient.getIsAvailable());
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
@@ -46,6 +51,8 @@ export const AppLayout: React.FC = () => {
   const [isDockHidden, setIsDockHidden] = useState(false);
 
   const mainScrollRef = useRef<HTMLElement>(null);
+  const lastScrollTopRef = useRef(0);
+  const accumulatedDeltaRef = useRef(0);
   const { loadInitialData } = useTasteStore();
 
   useEffect(() => {
@@ -67,6 +74,8 @@ export const AppLayout: React.FC = () => {
     });
 
     if (bridgeClient.getIsAvailable()) {
+      setBridgeState('connected');
+      setIsBridgeConnected(true);
       loadInitialData();
       discordPresenceManager.init();
     }
@@ -90,6 +99,36 @@ export const AppLayout: React.FC = () => {
     };
   }, []);
 
+  const handleViewportScroll = (e: React.UIEvent<HTMLElement>) => {
+    const current = e.currentTarget.scrollTop;
+    const delta = current - lastScrollTopRef.current;
+
+    // Reset dock to visible when near the top of the page
+    if (current <= 40) {
+      setIsDockHidden(false);
+      accumulatedDeltaRef.current = 0;
+      lastScrollTopRef.current = current;
+      return;
+    }
+
+    // Reset accumulated delta if direction changed
+    if ((delta > 0 && accumulatedDeltaRef.current < 0) || (delta < 0 && accumulatedDeltaRef.current > 0)) {
+      accumulatedDeltaRef.current = 0;
+    }
+    accumulatedDeltaRef.current += delta;
+
+    // Scrolling down: hide dock after moving 30px downwards
+    if (accumulatedDeltaRef.current > 30) {
+      setIsDockHidden(true);
+    }
+    // Scrolling up: show dock after moving 20px upwards
+    else if (accumulatedDeltaRef.current < -20) {
+      setIsDockHidden(false);
+    }
+
+    lastScrollTopRef.current = current;
+  };
+
   const handleSelectTab = (tab: NavTab) => {
     if (currentTab !== 'settings') {
       setPreviousTab(currentTab);
@@ -98,41 +137,13 @@ export const AppLayout: React.FC = () => {
     setViewingPlaylist(null);
     setViewingArtist(null);
     window.location.hash = `#${tab}`;
+    setIsDockHidden(false);
+    accumulatedDeltaRef.current = 0;
+    lastScrollTopRef.current = 0;
     if (mainScrollRef.current) {
       mainScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
-
-  // Scroll listener to toggle isDockHidden and coordinate MiniPlayer translation
-  useEffect(() => {
-    const el = mainScrollRef.current;
-    if (!el) return;
-
-    let lastScrollTop = el.scrollTop;
-    let ticking = false;
-
-    const onScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          const current = el.scrollTop;
-          const delta = current - lastScrollTop;
-
-          if (delta > 10 && current > 80) {
-            setIsDockHidden(true);
-          } else if (delta < -10 || current <= 30) {
-            setIsDockHidden(false);
-          }
-
-          lastScrollTop = Math.max(0, current);
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
 
   const isSubView = Boolean(viewingArtist || viewingPlaylist || currentTab === 'settings');
 
@@ -152,29 +163,19 @@ export const AppLayout: React.FC = () => {
         style={{
           height: '100vh',
           width: '100vw',
-          backgroundColor: 'var(--md-sys-color-surface, #121316)',
+          backgroundColor: 'var(--md-sys-color-background, #121316)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '20px',
-          fontFamily: "'Roboto Flex', system-ui, sans-serif"
+          padding: '24px'
         }}
       >
-        <div
-          style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '50%',
-            border: '3px solid rgba(255, 255, 255, 0.08)',
-            borderTopColor: '#e53935',
-            animation: 'spin 0.8s linear infinite'
-          }}
+        <M3LoadingIndicator
+          size="xl"
+          contained
+          message="Connecting to OurTube Bridge..."
         />
-        <span style={{ fontSize: '14px', fontWeight: 600, color: '#91909a', letterSpacing: '0.02em' }}>
-          Connecting to OurTube Bridge...
-        </span>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
@@ -202,11 +203,12 @@ export const AppLayout: React.FC = () => {
       <main
         ref={mainScrollRef}
         id="main-viewport"
+        onScroll={handleViewportScroll}
         style={{
           flex: 1,
           height: '100%',
           overflowY: 'auto',
-          padding: '24px 36px 140px 36px',
+          padding: '24px 36px 160px 36px',
           position: 'relative',
           display: 'flex',
           flexDirection: 'column'
@@ -234,8 +236,8 @@ export const AppLayout: React.FC = () => {
                   width: '42px',
                   height: '42px',
                   borderRadius: '50%',
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  backgroundColor: 'var(--md-sys-color-surface-container)',
+                  border: '1px solid var(--md-sys-color-outline-variant)',
                   color: 'var(--md-sys-color-on-surface)',
                   display: 'flex',
                   alignItems: 'center',
@@ -245,11 +247,11 @@ export const AppLayout: React.FC = () => {
                 }}
                 title="Go Back"
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.16)';
+                  e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
                   e.currentTarget.style.transform = 'scale(1.05)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)';
                   e.currentTarget.style.transform = 'scale(1)';
                 }}
               >
@@ -304,8 +306,8 @@ export const AppLayout: React.FC = () => {
                 width: '42px',
                 height: '42px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                backgroundColor: 'var(--md-sys-color-surface-container)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
                 color: 'var(--md-sys-color-on-surface)',
                 display: 'flex',
                 alignItems: 'center',
@@ -314,59 +316,47 @@ export const AppLayout: React.FC = () => {
                 transition: 'all 150ms ease'
               }}
               title="Theme & Accent Palette"
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)')}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)')}
             >
               <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
                 palette
               </span>
             </button>
 
-            {/* Settings Button */}
-            <button
-              onClick={() => {
-                if (currentTab !== 'settings') {
+            {/* Settings Button: shown when not on settings */}
+            {currentTab !== 'settings' && (
+              <button
+                onClick={() => {
                   setPreviousTab(currentTab);
                   handleSelectTab('settings');
-                } else {
-                  handleSelectTab(previousTab || 'home');
-                }
-              }}
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '50%',
-                backgroundColor:
-                  currentTab === 'settings'
-                    ? 'var(--md-sys-color-primary)'
-                    : 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                color:
-                  currentTab === 'settings'
-                    ? 'var(--md-sys-color-on-primary)'
-                    : 'var(--md-sys-color-on-surface)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 150ms ease'
-              }}
-              title="Settings"
-              onMouseEnter={(e) => {
-                if (currentTab !== 'settings') {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (currentTab !== 'settings') {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
-                }
-              }}
-            >
-              <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
-                settings
-              </span>
-            </button>
+                }}
+                style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--md-sys-color-surface-container)',
+                  border: '1px solid var(--md-sys-color-outline-variant)',
+                  color: 'var(--md-sys-color-on-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
+                }}
+                title="Settings"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)';
+                }}
+              >
+                <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+                  settings
+                </span>
+              </button>
+            )}
           </div>
         </header>
 
@@ -430,6 +420,11 @@ export const AppLayout: React.FC = () => {
       {/* Palette Studio Modal */}
       {isPaletteStudioOpen && (
         <PaletteStudio onClose={() => setIsPaletteStudioOpen(false)} />
+      )}
+
+      {/* Keyboard Shortcuts Cheat Sheet Modal */}
+      {isShortcutsModalOpen && (
+        <KeyboardShortcutsModal onClose={() => setIsShortcutsModalOpen(false)} />
       )}
     </div>
   );

@@ -34,9 +34,13 @@
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'Roboto Flex', var(--font-sans);
 
-  /* Motion & Spring curves */
+  /* Motion & Spring curves (Material 3 Expressive) */
   --motion-easing-emphasized: cubic-bezier(0.2, 0.0, 0.0, 1.0);
   --motion-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --motion-spring-joyful: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-spring-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1.0);
+  --motion-emphasized-accelerate: cubic-bezier(0.3, 0.0, 0.8, 0.15);
   --motion-duration-short: 200ms;
   --motion-duration-medium: 350ms;
   --motion-duration-long: 500ms;
@@ -96,19 +100,21 @@ html.amoled-mode body {
   font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
 }
 
-/* Glassmorphism styling */
+/* Material 3 Dynamic Glassmorphism styling */
 .glass-panel {
-  background: rgba(29, 32, 36, 0.72);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--md-sys-color-surface-container);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  box-shadow: 0 8px 32px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.1));
 }
 
 .glass-pill {
-  background: rgba(40, 42, 47, 0.65);
+  background: var(--md-sys-color-surface-container-high);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  box-shadow: 0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.08));
 }
 
 /* Smooth custom scrollbars */
@@ -135,3 +141,114 @@ html.amoled-mode body {
     display: none !important;
   }
 }
+
+/* =========================================================================
+   Material 3 Expressive Micro-Animations & Tactile Physics
+   ========================================================================= */
+
+@keyframes m3HeartBurst {
+  0% {
+    transform: scale(0.68);
+  }
+  45% {
+    transform: scale(1.36) rotate(-6deg);
+  }
+  75% {
+    transform: scale(0.94) rotate(2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes m3PlayPop {
+  0% {
+    transform: scale(0.88);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes m3IconSpring {
+  0% {
+    transform: scale(0.78);
+  }
+  50% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes m3SkipNudge {
+  0% {
+    transform: translateX(0);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  75% {
+    transform: translateX(-1.5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes m3ArtworkBreathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.038);
+  }
+}
+
+@keyframes m3SoundwaveRing {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes m3ParticleBurst {
+  0% {
+    transform: translate(0, 0) scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx, 14px), var(--ty, -14px)) scale(0);
+    opacity: 0;
+  }
+}
+
+@keyframes m3TextSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

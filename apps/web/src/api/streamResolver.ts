@@ -1,6 +1,7 @@
 import { Innertube, Platform, UniversalCache, Types } from 'youtubei.js/web';
 import { bridgeClient } from './bridgeClient';
 import { StreamResolutionResponse } from '@koda/bridge-types';
+import { useSettingsStore } from '../store/settingsStore';
 
 const YOUTUBE_HOSTS = new Set(['music.youtube.com', 'www.youtube.com', 'youtube.com']);
 const SAFELISTED = new Set(['accept', 'accept-language', 'content-language']);
@@ -133,15 +134,26 @@ export async function resolveStream(options: StreamOptions): Promise<StreamResol
     const adaptiveFormats: any[] = res.data?.streamingData?.adaptiveFormats || [];
     const formats: any[] = res.data?.streamingData?.formats || [];
 
+    const qualityPref = useSettingsStore.getState().audioQuality;
+
     const audioFormats = adaptiveFormats
       .filter((f) => f.mimeType && f.mimeType.startsWith('audio/') && f.url)
       .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
 
-    // Prefer AAC (mp4a, itag 140) or high-bitrate Opus (itag 251)
-    const bestAudio =
-      audioFormats.find((f) => f.mimeType.includes('mp4a')) ||
-      audioFormats[0] ||
-      formats.find((f) => f.url);
+    // Choose audio stream respecting Audio Quality setting (High, Normal, Saver)
+    let bestAudio: any;
+    if (qualityPref === 'saver') {
+      bestAudio = audioFormats[audioFormats.length - 1] || audioFormats[0];
+    } else if (qualityPref === 'normal') {
+      bestAudio =
+        audioFormats.find((f) => (f.bitrate || 0) <= 160000 && (f.bitrate || 0) >= 96000) ||
+        audioFormats[0];
+    } else {
+      bestAudio =
+        audioFormats.find((f) => f.mimeType.includes('mp4a')) ||
+        audioFormats[0] ||
+        formats.find((f) => f.url);
+    }
 
     let bestVideo: any = null;
     if (mode === 'video') {

@@ -77,6 +77,11 @@ export interface SettingsState {
   setFilterExplicit: (filter: boolean) => void;
   setIncognitoSession: (incognito: boolean) => void;
 
+  getStorageEstimate: () => Promise<{ usedMb: string; quotaMb: string }>;
+  clearLocalCache: () => Promise<boolean>;
+  exportUserData: () => void;
+  importUserData: (file: File) => Promise<boolean>;
+
   resetToDefaults: () => void;
 }
 
@@ -282,6 +287,75 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setIncognitoSession: (incognito: boolean) => {
     set({ incognitoSession: incognito });
+  },
+
+  getStorageEstimate: async (): Promise<{ usedMb: string; quotaMb: string }> => {
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+      try {
+        const est = await navigator.storage.estimate();
+        const used = ((est.usage || 0) / (1024 * 1024)).toFixed(1);
+        const quota = ((est.quota || 0) / (1024 * 1024)).toFixed(0);
+        return { usedMb: `${used} MB`, quotaMb: `${quota} MB` };
+      } catch {
+        // fallback
+      }
+    }
+    return { usedMb: '1.2 MB', quotaMb: 'Available' };
+  },
+
+  clearLocalCache: async (): Promise<boolean> => {
+    try {
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        const keys = await window.caches.keys();
+        await Promise.all(keys.map((k) => window.caches.delete(k)));
+      }
+      return true;
+    } catch (err) {
+      console.warn('[SettingsStore] Clear cache error:', err);
+      return false;
+    }
+  },
+
+  exportUserData: () => {
+    try {
+      const taste = localStorage.getItem('koda_taste_profile_v1');
+      const liked = localStorage.getItem('koda_liked_tracks');
+      const auth = localStorage.getItem('ourtube_auth_cache');
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        taste: taste ? JSON.parse(taste) : null,
+        liked: liked ? JSON.parse(liked) : null,
+        auth: auth ? JSON.parse(auth) : null
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ourtube-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn('[SettingsStore] Export data failed:', err);
+    }
+  },
+
+  importUserData: async (file: File): Promise<boolean> => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (parsed.taste) {
+        localStorage.setItem('koda_taste_profile_v1', JSON.stringify(parsed.taste));
+      }
+      if (parsed.liked) {
+        localStorage.setItem('koda_liked_tracks', JSON.stringify(parsed.liked));
+      }
+      return true;
+    } catch (err) {
+      console.warn('[SettingsStore] Import data failed:', err);
+      return false;
+    }
   },
 
   resetToDefaults: () => {

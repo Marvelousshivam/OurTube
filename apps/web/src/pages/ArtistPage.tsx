@@ -9,7 +9,8 @@ import {
   DSTrackRow,
   MediaCard,
   DSAvatar,
-  DSSectionHeader
+  DSSectionHeader,
+  M3LoadingIndicator
 } from '../design-system';
 
 export interface ArtistPageProps {
@@ -92,15 +93,10 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            height: '360px',
-            gap: '12px',
-            color: COLOR_TOKENS.onSurfaceVariant
+            minHeight: '360px'
           }}
         >
-          <span className="material-symbols-rounded" style={{ animation: 'spin 1s linear infinite', fontSize: '36px' }}>
-            progress_activity
-          </span>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>Loading artist profile...</span>
+          <M3LoadingIndicator contained size="lg" message="Loading artist discography & top tracks..." />
         </div>
       )}
 

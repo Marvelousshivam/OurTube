@@ -8,7 +8,8 @@ import {
   COLOR_TOKENS,
   DSButton,
   DSIconButton,
-  DSTrackRow
+  DSTrackRow,
+  M3LoadingIndicator
 } from '../design-system';
 
 export interface PlaylistPageProps {
@@ -200,15 +201,10 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({ playlist, onBack, on
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              height: '240px',
-              gap: '12px',
-              color: COLOR_TOKENS.onSurfaceVariant
+              minHeight: '260px'
             }}
           >
-            <span className="material-symbols-rounded" style={{ animation: 'spin 1s linear infinite', fontSize: '28px' }}>
-              progress_activity
-            </span>
-            <span>Loading playlist tracks...</span>
+            <M3LoadingIndicator contained size="lg" message="Loading playlist tracks..." />
           </div>
         )}
 

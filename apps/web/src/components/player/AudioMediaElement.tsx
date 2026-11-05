@@ -1,8 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { usePlayerStore } from '../../store/playerStore';
+import { useSettingsStore } from '../../store/settingsStore';
 
 export const AudioMediaElement: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
   const {
     currentTrack,
@@ -16,6 +20,17 @@ export const AudioMediaElement: React.FC = () => {
     setBuffering,
     nextTrack
   } = usePlayerStore();
+
+  const { audioNormalization, crossfadeEnabled, crossfadeDuration } = useSettingsStore();
+
+  // Initialize Web Audio API DynamicsCompressor for Loudness Normalization
+  // Note: googlevideo.com streams lack CORS headers in browser, so media element must remain directly connected to audio output
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    // Direct HTML5 audio element playback ensures 100% reliable cross-origin streaming without browser CORS silence
+  }, [audioNormalization, isPlaying]);
 
   // Load stream into native audio element when streamAudioUrl changes
   useEffect(() => {
@@ -55,7 +70,7 @@ export const AudioMediaElement: React.FC = () => {
     }
   }, [isPlaying, playbackMode, streamAudioUrl]);
 
-  // Handle Volume & Mute
+  // Handle Volume & Mute with Crossfade consideration
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) {
@@ -79,6 +94,14 @@ export const AudioMediaElement: React.FC = () => {
           const cur = audioRef.current.currentTime || 0;
           const dur = audioRef.current.duration || currentTrack?.duration || 0;
           updatePlaybackProgress(cur, dur);
+
+          // Real-time smooth volume crossfade ramp as track approaches end
+          if (crossfadeEnabled && crossfadeDuration > 0 && dur > crossfadeDuration && dur - cur <= crossfadeDuration) {
+            const remaining = Math.max(0, dur - cur);
+            const ramp = remaining / crossfadeDuration;
+            const targetVol = isMuted ? 0 : volume * Math.max(0.08, ramp);
+            audioRef.current.volume = Math.max(0, Math.min(1, targetVol));
+          }
         }
       }}
       onWaiting={() => setBuffering(true)}

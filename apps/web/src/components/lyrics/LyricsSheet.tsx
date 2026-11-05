@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { usePlayerStore } from '../../store/playerStore';
 import { LyricClock } from '../../lyrics/clock';
+import { M3LoadingIndicator } from '../common/M3LoadingIndicator';
 
 export interface LyricsSheetProps {
   isEmbedded?: boolean;
@@ -224,21 +225,12 @@ export const LyricsSheet: React.FC<LyricsSheetProps> = ({ isEmbedded = false }) 
           <div
             style={{
               display: 'flex',
-              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              height: '320px',
-              gap: '16px',
-              color: 'var(--md-sys-color-outline)'
+              height: '320px'
             }}
           >
-            <span
-              className="material-symbols-rounded"
-              style={{ fontSize: '36px', animation: 'spin 1.5s linear infinite' }}
-            >
-              progress_activity
-            </span>
-            <span style={{ fontSize: '14px', fontWeight: 600 }}>Syncing lyrics stream...</span>
+            <M3LoadingIndicator contained size="md" message="Fetching word-synced lyrics..." />
           </div>
         )}
 
