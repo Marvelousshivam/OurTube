@@ -9,9 +9,14 @@ import { Innertube } from 'youtubei.js/web';
 
 let innertubeInstance: Innertube | null = null;
 
-async function getInnertube(): Promise<Innertube> {
+async function getInnertube(): Promise<Innertube | null> {
   if (!innertubeInstance) {
-    innertubeInstance = await Innertube.create();
+    try {
+      innertubeInstance = await Innertube.create();
+    } catch (e) {
+      console.warn('[OurTube Companion] Extension Innertube init failed:', e);
+      return null;
+    }
   }
   return innertubeInstance;
 }
@@ -73,6 +78,7 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
   // 1. Direct unencrypted resolution via VISIONOS client
   try {
     const yt = await getInnertube();
+    if (!yt) return { audioUrl: undefined, videoUrl: undefined };
     const res = await yt.actions.execute('/player', { videoId, client: 'VISIONOS' });
     const adaptiveFormats: any[] = res.data?.streamingData?.adaptiveFormats || [];
     const formats: any[] = res.data?.streamingData?.formats || [];
@@ -120,6 +126,7 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
   // 2. Fallback: getInfo with signature deciphering
   try {
     const yt = await getInnertube();
+    if (!yt) return { audioUrl: undefined, videoUrl: undefined };
     const info = await yt.getInfo(videoId);
     const audio = info.chooseFormat({ type: 'audio', quality: 'best' });
     const video = payload.mode === 'video' ? info.chooseFormat({ type: 'video', quality: 'best' }) : null;

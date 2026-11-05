@@ -1,6 +1,8 @@
 const CORS_RESPONSE: chrome.declarativeNetRequest.ModifyHeaderInfo[] = [
   { header: 'Access-Control-Allow-Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' },
-  { header: 'Access-Control-Expose-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' }
+  { header: 'Access-Control-Expose-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' },
+  { header: 'Access-Control-Allow-Methods', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'GET, POST, OPTIONS, HEAD' },
+  { header: 'Access-Control-Allow-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' }
 ];
 
 function impersonate(origin: string): chrome.declarativeNetRequest.ModifyHeaderInfo[] {
@@ -15,24 +17,27 @@ export const EXTENSION_FETCH_RULE_ID = 100;
 export const EXTENSION_MUSIC_FETCH_RULE_ID = 101;
 export const EXTENSION_STATS_FETCH_RULE_ID = 102;
 
+/**
+ * Scoped to non-tab requests (tabId -1) initiated directly by the extension.
+ * Notice: BotGuard (www.youtube.com/api/jnn) already allows any origin and REFUSES
+ * a rewritten YouTube Origin, so we scope this strictly to youtubei endpoints.
+ */
 export async function installExtensionFetchRule(): Promise<void> {
-  const own = (id: number, host: string, origin: string): chrome.declarativeNetRequest.Rule => ({
+  const own = (id: number, hostPath: string, origin: string): chrome.declarativeNetRequest.Rule => ({
     id,
-    priority: 2,
+    priority: 1,
     condition: {
-      urlFilter: `||${host}/`,
+      urlFilter: `||${hostPath}/`,
       tabIds: [-1],
       resourceTypes: [
-        chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-        chrome.declarativeNetRequest.ResourceType.OTHER
+        chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST
       ]
     },
     action: {
       type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
       requestHeaders: [
         { header: 'Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: origin },
-        { header: 'Referer', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `${origin}/` },
-        { header: 'X-Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: origin }
+        { header: 'Referer', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `${origin}/` }
       ]
     }
   });
@@ -41,14 +46,14 @@ export async function installExtensionFetchRule(): Promise<void> {
     await chrome.declarativeNetRequest.updateSessionRules({
       removeRuleIds: [EXTENSION_FETCH_RULE_ID, EXTENSION_MUSIC_FETCH_RULE_ID, EXTENSION_STATS_FETCH_RULE_ID],
       addRules: [
-        own(EXTENSION_FETCH_RULE_ID, 'www.youtube.com', 'https://www.youtube.com'),
+        own(EXTENSION_FETCH_RULE_ID, 'www.youtube.com/youtubei', 'https://www.youtube.com'),
         own(EXTENSION_MUSIC_FETCH_RULE_ID, 'music.youtube.com', 'https://music.youtube.com'),
         own(EXTENSION_STATS_FETCH_RULE_ID, 's.youtube.com', 'https://music.youtube.com')
       ]
     });
-    console.log('[Koda Extension] Session fetch rules installed for background requests.');
+    console.log('[OurTube Companion] Session fetch rules installed for background requests.');
   } catch (err) {
-    console.warn('[Koda Extension] Failed to update session rules:', err);
+    console.warn('[OurTube Companion] Failed to update session rules:', err);
   }
 }
 
