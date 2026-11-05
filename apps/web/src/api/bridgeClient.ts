@@ -301,8 +301,6 @@ class BridgeClient {
       };
 
       window.postMessage(req, '*');
-      // Also send KODA_BRIDGE_REQ for older content script compatibility
-      window.postMessage({ ...req, channel: 'KODA_BRIDGE_REQ' }, '*');
     });
   }
 

@@ -5,7 +5,7 @@ import {
   StreamResolutionResponse
 } from '@koda/bridge-types';
 import { getAuthState, getActiveIdentity, MUSIC_ORIGIN } from './auth';
-import { Innertube } from 'youtubei.js';
+import { Innertube } from 'youtubei.js/web';
 
 let innertubeInstance: Innertube | null = null;
 

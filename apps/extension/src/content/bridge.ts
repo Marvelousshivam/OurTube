@@ -36,32 +36,19 @@ window.addEventListener('message', (event) => {
 
   chrome.runtime.sendMessage(req, (res: BridgeResponse) => {
     if (chrome.runtime.lastError) {
-      window.postMessage(
-        {
-          channel: 'OURTUBE_BRIDGE_RES',
-          id: req.id,
-          type: req.type,
-          success: false,
-          error: chrome.runtime.lastError.message
-        } as BridgeResponse,
-        '*'
-      );
-      window.postMessage(
-        {
-          channel: 'KODA_BRIDGE_RES',
-          id: req.id,
-          type: req.type,
-          success: false,
-          error: chrome.runtime.lastError.message
-        } as BridgeResponse,
-        '*'
-      );
+      const errRes: BridgeResponse = {
+        channel: req.channel === 'OURTUBE_BRIDGE_REQ' ? 'OURTUBE_BRIDGE_RES' : 'KODA_BRIDGE_RES',
+        id: req.id,
+        type: req.type,
+        success: false,
+        error: chrome.runtime.lastError.message
+      };
+      window.postMessage(errRes, '*');
       return;
     }
 
-    window.postMessage(res, '*');
-    if (res && res.channel === 'KODA_BRIDGE_RES') {
-      window.postMessage({ ...res, channel: 'OURTUBE_BRIDGE_RES' }, '*');
+    if (res) {
+      window.postMessage(res, '*');
     }
   });
 });

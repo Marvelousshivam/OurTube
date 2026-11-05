@@ -52,7 +52,12 @@ export async function installExtensionFetchRule(): Promise<void> {
   }
 }
 
-const INITIATOR_DOMAINS = ['localhost', '127.0.0.1'];
+const INITIATOR_DOMAINS = [
+  'localhost',
+  '127.0.0.1',
+  'vercel.app',
+  'ourtube-zeta.vercel.app'
+];
 
 export async function installDynamicRules() {
   const rules: chrome.declarativeNetRequest.Rule[] = [
@@ -92,16 +97,15 @@ export async function installDynamicRules() {
         responseHeaders: CORS_RESPONSE
       }
     },
-    // 3. YouTube.js session & player bootstrapping
+    // 3. YouTube session bootstrap (sw.js_data)
     {
       id: 3,
       priority: 1,
       condition: {
-        urlFilter: '||www.youtube.com/s/player/',
+        urlFilter: '||www.youtube.com/sw.js_data',
         initiatorDomains: INITIATOR_DOMAINS,
         resourceTypes: [
           chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-          chrome.declarativeNetRequest.ResourceType.SCRIPT,
           chrome.declarativeNetRequest.ResourceType.OTHER
         ]
       },
@@ -150,17 +154,53 @@ export async function installDynamicRules() {
         ],
         responseHeaders: CORS_RESPONSE
       }
+    },
+    // 6. iframe_api bootstrap
+    {
+      id: 6,
+      priority: 1,
+      condition: {
+        urlFilter: '||www.youtube.com/iframe_api',
+        initiatorDomains: INITIATOR_DOMAINS,
+        resourceTypes: [
+          chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+          chrome.declarativeNetRequest.ResourceType.SCRIPT,
+          chrome.declarativeNetRequest.ResourceType.OTHER
+        ]
+      },
+      action: {
+        type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+        responseHeaders: CORS_RESPONSE
+      }
+    },
+    // 7. Player script (s/player/)
+    {
+      id: 7,
+      priority: 1,
+      condition: {
+        urlFilter: '||www.youtube.com/s/player/',
+        initiatorDomains: INITIATOR_DOMAINS,
+        resourceTypes: [
+          chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+          chrome.declarativeNetRequest.ResourceType.SCRIPT,
+          chrome.declarativeNetRequest.ResourceType.OTHER
+        ]
+      },
+      action: {
+        type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+        responseHeaders: CORS_RESPONSE
+      }
     }
   ];
 
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: [1, 2, 3, 4, 5],
+      removeRuleIds: [1, 2, 3, 4, 5, 6, 7],
       addRules: rules
     });
-    console.log('[Koda Extension] Dynamic DNR rules installed successfully.');
+    console.log('[OurTube Companion] Dynamic DNR rules installed successfully.');
   } catch (err) {
-    console.warn('[Koda Extension] Could not install DNR rules:', err);
+    console.warn('[OurTube Companion] Could not install DNR rules:', err);
   }
 
   await installExtensionFetchRule();

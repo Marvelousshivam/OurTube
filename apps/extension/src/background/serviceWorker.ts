@@ -5,13 +5,38 @@ import { installDynamicRules } from './rules';
 
 console.log('[OurTube Companion] Background Service Worker initialized.');
 
-chrome.runtime.onInstalled.addListener(() => {
+async function autoInjectExistingTabs() {
+  try {
+    const tabs = await chrome.tabs.query({
+      url: [
+        'http://localhost/*',
+        'http://127.0.0.1/*',
+        'https://*.vercel.app/*',
+        'https://ourtube-zeta.vercel.app/*'
+      ]
+    });
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['bridge.js']
+        }).catch((e) => console.warn('[OurTube Companion] Auto-inject skipped tab:', e));
+      }
+    }
+  } catch (err) {
+    console.warn('[OurTube Companion] Auto-inject tabs query error:', err);
+  }
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
   console.log('[OurTube Companion] Installed successfully.');
-  installDynamicRules();
+  await installDynamicRules();
+  await autoInjectExistingTabs();
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  installDynamicRules();
+chrome.runtime.onStartup.addListener(async () => {
+  await installDynamicRules();
+  await autoInjectExistingTabs();
 });
 
 chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendResponse) => {
@@ -22,12 +47,13 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
   (async () => {
     try {
       switch (message.type) {
+        case 'OURTUBE_BRIDGE_PING' as any:
         case 'KODA_BRIDGE_PING': {
           await installDynamicRules();
           const response: BridgeResponse = {
             channel: resChannel,
             id: message.id,
-            type: 'KODA_BRIDGE_PONG',
+            type: message.type,
             success: true,
             data: {
               name: 'OurTube Companion Extension',
@@ -39,7 +65,9 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           break;
         }
 
+        case 'OURTUBE_BRIDGE_GET_AUTH' as any:
         case 'KODA_BRIDGE_GET_AUTH':
+        case 'OURTUBE_BRIDGE_GET_ACCOUNTS' as any:
         case 'KODA_BRIDGE_GET_ACCOUNTS': {
           const authState = await getAuthState();
           const response: BridgeResponse = {
@@ -53,6 +81,7 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           break;
         }
 
+        case 'OURTUBE_BRIDGE_SELECT_ACCOUNT' as any:
         case 'KODA_BRIDGE_SELECT_ACCOUNT': {
           if (message.payload?.channelId) {
             await setSelectedChannelId(message.payload.channelId);
@@ -69,12 +98,13 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           break;
         }
 
+        case 'OURTUBE_BRIDGE_FETCH' as any:
         case 'KODA_BRIDGE_FETCH': {
           const fetchResult = await handleProxyFetch(message.payload);
           const response: BridgeResponse = {
             channel: resChannel,
             id: message.id,
-            type: 'KODA_BRIDGE_FETCH',
+            type: message.type,
             success: true,
             data: fetchResult
           };
@@ -82,12 +112,13 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           break;
         }
 
+        case 'OURTUBE_BRIDGE_STREAM_URL' as any:
         case 'KODA_BRIDGE_STREAM_URL': {
           const streamResult = await handleStreamResolution(message.payload);
           const response: BridgeResponse = {
             channel: resChannel,
             id: message.id,
-            type: 'KODA_BRIDGE_STREAM_URL',
+            type: message.type,
             success: true,
             data: streamResult
           };

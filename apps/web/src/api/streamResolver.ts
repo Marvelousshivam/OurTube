@@ -1,4 +1,4 @@
-import { Innertube } from 'youtubei.js';
+import { Innertube } from 'youtubei.js/web';
 import { bridgeClient } from './bridgeClient';
 import { StreamResolutionResponse } from '@koda/bridge-types';
 
