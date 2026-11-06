@@ -135,7 +135,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
   }, [topArtists]);
 
   // Derive authentic personalized listening tracks for "Your Mix" from user's history, likes & personalized shelves
-  const mixTracks = useMemo(() => {
+  const { mixTracks, isPersonalMix } = useMemo(() => {
     const personalTracks: TrackMetadata[] = [];
     const seenIds = new Set<string>();
 
@@ -179,15 +179,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
 
     // If we have at least 3 tracks from authentic shelves or account listening, return them!
     if (personalTracks.length >= 3) {
-      return personalTracks.slice(0, 12);
+      return { mixTracks: personalTracks.slice(0, 12), isPersonalMix: true };
     }
 
     // Fallback if fresh account with no history or personalized shelf yet
     if (sections.length > 0) {
-      return sections[0].items.slice(0, 12);
+      return { mixTracks: sections[0].items.slice(0, 12), isPersonalMix: false };
     }
 
-    return [];
+    return { mixTracks: [], isPersonalMix: false };
   }, [likedTracks, history, sections]);
 
   // Derive authentic Recently Played songs (merging local playback history with remote YouTube history)
@@ -278,6 +278,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
       {mixTracks.length > 0 && (
         <YourMixHero
           tracks={mixTracks}
+          title={isPersonalMix ? 'Your\nMix' : 'Discover\nMix'}
           onPlayMix={(t) => playTrack(t[0], t)}
           onTrackClick={(t) => playTrack(t, mixTracks)}
           isWideScreen={isWideScreen}

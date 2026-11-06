@@ -7,13 +7,15 @@ interface YourMixHeroProps {
   onPlayMix: (tracks: TrackMetadata[]) => void;
   onTrackClick?: (track: TrackMetadata) => void;
   isWideScreen?: boolean;
+  title?: string;
 }
 
 export const YourMixHero: React.FC<YourMixHeroProps> = ({
   tracks,
   onPlayMix,
   onTrackClick,
-  isWideScreen = true
+  isWideScreen = true,
+  title
 }) => {
   if (!tracks || tracks.length === 0) return null;
 
@@ -188,9 +190,20 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                     color: 'var(--md-sys-color-on-surface)'
                   }}
                 >
-                  Your
-                  <br />
-                  Mix
+                  {title ? (
+                    title.split('\n').map((line, i, arr) => (
+                      <React.Fragment key={i}>
+                        {line}
+                        {i < arr.length - 1 && <br />}
+                      </React.Fragment>
+                    ))
+                  ) : (
+                    <>
+                      Your
+                      <br />
+                      Mix
+                    </>
+                  )}
                 </h1>
 
                 <p
@@ -317,9 +330,20 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                   color: 'var(--md-sys-color-on-surface)'
                 }}
               >
-                Your
-                <br />
-                Mix
+                {title ? (
+                  title.split('\n').map((line, i, arr) => (
+                    <React.Fragment key={i}>
+                      {line}
+                      {i < arr.length - 1 && <br />}
+                    </React.Fragment>
+                  ))
+                ) : (
+                  <>
+                    Your
+                    <br />
+                    Mix
+                  </>
+                )}
               </h1>
               <p
                 style={{

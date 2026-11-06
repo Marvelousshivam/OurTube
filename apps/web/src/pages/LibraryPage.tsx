@@ -97,7 +97,16 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
       }
     });
 
-    return () => unsub();
+    const unsubAccount = bridgeClient.onAccountChange((auth) => {
+      setAuthState(auth);
+      loadPlaylists();
+      loadHistory();
+    });
+
+    return () => {
+      unsub();
+      unsubAccount();
+    };
   }, []);
 
   // Filter out duplicate Liked Music / LM auto-playlist items from secondary grid

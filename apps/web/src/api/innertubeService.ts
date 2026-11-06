@@ -337,6 +337,92 @@ export class InnertubeService {
   }
 
   /**
+   * Universal fetch helper for Desktop YouTube endpoints (www.youtube.com/youtubei/v1/...)
+   * Used for Video Mode feeds, Trending, Subscriptions, and Playlists.
+   */
+  public async fetchDesktopYouTubeEndpoint(endpoint: string, bodyPayload: any): Promise<any> {
+    const authState = bridgeClient.getAuthState();
+    const activeAuthUser = authState?.selectedChannel?.authUser || '0';
+    const activePageId = authState?.selectedChannel?.pageId || null;
+
+    const defaultPayload: any = {
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20251006.00.00',
+          hl: 'en',
+          gl: 'IN',
+          originalUrl: 'https://www.youtube.com/',
+          platform: 'DESKTOP'
+        }
+      },
+      ...bodyPayload
+    };
+
+    if (activePageId) {
+      defaultPayload.context.user = { onBehalfOfUser: activePageId };
+    }
+
+    // 1. Try extension bridge
+    if (bridgeClient.getIsAvailable()) {
+      try {
+        const bridgeHeaders: Record<string, string> = {
+          'X-Goog-AuthUser': activeAuthUser
+        };
+        if (activePageId) {
+          bridgeHeaders['X-Goog-PageId'] = activePageId;
+        }
+
+        const response = await bridgeClient.fetchInnertube({
+          url: `https://www.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false&authuser=${activeAuthUser}`,
+          method: 'POST',
+          headers: bridgeHeaders,
+          body: defaultPayload
+        });
+        if (response?.data && !response.data?.error) {
+          return response.data;
+        }
+      } catch (bridgeErr) {
+        console.warn(`[Koda Innertube] Desktop YouTube Bridge ${endpoint} error:`, bridgeErr);
+      }
+    }
+
+    // 2. Direct browser fetch with declarativeNetRequest Rule 2 header rewriting
+    try {
+      const directHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-YouTube-Client-Name': '1',
+        'X-YouTube-Client-Version': '2.20251006.00.00',
+        'X-Goog-AuthUser': activeAuthUser
+      };
+      if (activePageId) {
+        directHeaders['X-Goog-PageId'] = activePageId;
+      }
+
+      const directRes = await window.fetch(
+        `https://www.youtube.com/youtubei/v1/${endpoint}?prettyPrint=false&authuser=${activeAuthUser}`,
+        {
+          method: 'POST',
+          headers: directHeaders,
+          body: JSON.stringify(defaultPayload),
+          credentials: 'include'
+        }
+      ).catch(() => null);
+
+      if (directRes && directRes.ok) {
+        const directData = await directRes.json();
+        if (directData && !directData.error) {
+          return directData;
+        }
+      }
+    } catch (directErr) {
+      console.warn(`[Koda Innertube] Direct browser fetch desktop ${endpoint} error:`, directErr);
+    }
+
+    return null;
+  }
+
+  /**
    * Fetches official YouTube Music Watch Next Radio station (RDAMVM...)
    * Returns up to 50 curated tracks matching the track's mood, genre, and seed artist.
    */
@@ -468,20 +554,7 @@ export class InnertubeService {
    * Supports topic filter chips (params) and returns both videos and chips.
    */
   public async getVideoHomeFeed(params?: string): Promise<VideoFeedResult> {
-    const authState = bridgeClient.getAuthState();
-    const activeAuthUser = authState?.selectedChannel?.authUser || '0';
-    const activePageId = authState?.selectedChannel?.pageId || null;
-
     const bodyPayload: any = {
-      context: {
-        client: {
-          clientName: 'WEB',
-          clientVersion: '2.20251006.00.00',
-          hl: 'en',
-          gl: 'IN',
-          originalUrl: 'https://www.youtube.com/'
-        }
-      },
       browseId: 'FEwhat_to_watch'
     };
 
@@ -489,74 +562,35 @@ export class InnertubeService {
       bodyPayload.params = params;
     }
 
-    if (activePageId) {
-      bodyPayload.context.user = { onBehalfOfUser: activePageId };
-    }
-
-    let data: any = null;
-
-    // 1. Try extension bridge with www.youtube.com
-    if (bridgeClient.getIsAvailable()) {
-      try {
-        const response = await bridgeClient.fetchInnertube({
-          url: `https://www.youtube.com/youtubei/v1/browse?prettyPrint=false&authuser=${activeAuthUser}`,
-          method: 'POST',
-          body: bodyPayload
-        });
-        if (response?.data && !response.data?.error) {
-          data = response.data;
-        }
-      } catch (bridgeErr) {
-        console.warn('[InnertubeService] Video feed bridge fetch failed:', bridgeErr);
-      }
-    }
-
-    // 2. Direct browser fetch with declarativeNetRequest header rewriting
-    if (!data) {
-      try {
-        let directRes = await window.fetch(
-          `https://www.youtube.com/youtubei/v1/browse?prettyPrint=false&authuser=${activeAuthUser}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-YouTube-Client-Name': '1',
-              'X-YouTube-Client-Version': '2.20251006.00.00',
-              'X-Goog-AuthUser': activeAuthUser
-            },
-            body: JSON.stringify(bodyPayload),
-            credentials: 'include'
-          }
-        ).catch(() => null);
-
-        if (!directRes || !directRes.ok) {
-          directRes = await window.fetch(
-            `https://www.youtube.com/youtubei/v1/browse?prettyPrint=false&authuser=${activeAuthUser}`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-YouTube-Client-Name': '1',
-                'X-YouTube-Client-Version': '2.20251006.00.00'
-              },
-              body: JSON.stringify(bodyPayload),
-              credentials: 'omit'
-            }
-          ).catch(() => null);
-        }
-
-        if (directRes && directRes.ok) {
-          data = await directRes.json();
-        }
-      } catch (directErr) {
-        console.warn('[InnertubeService] Video feed direct fetch failed:', directErr);
-      }
-    }
+    let data = await this.fetchDesktopYouTubeEndpoint('browse', bodyPayload);
 
     let videos = data ? this.parseVideoItemsFromBrowse(data) : [];
     const chips = data ? this.parseChipsFromBrowse(data) : [];
 
-    // 3. Fallback: If fewer than 8 videos were parsed (e.g. only members-only shelf), scrape YouTube homepage initial data
+    // 2. Fallback: If account has empty watch history (e.g. secondary account), fetch official YouTube Trending feed
+    if (videos.length < 8 && !params) {
+      try {
+        const trendingData = await this.fetchDesktopYouTubeEndpoint('browse', {
+          browseId: 'FEtrending'
+        });
+        if (trendingData) {
+          const trendingVideos = this.parseVideoItemsFromBrowse(trendingData);
+          if (trendingVideos.length > 0) {
+            const existingIds = new Set(videos.map((v) => v.id));
+            for (const tv of trendingVideos) {
+              if (!existingIds.has(tv.id)) {
+                existingIds.add(tv.id);
+                videos.push(tv);
+              }
+            }
+          }
+        }
+      } catch (trendingErr) {
+        console.warn('[InnertubeService] Trending fallback error:', trendingErr);
+      }
+    }
+
+    // 3. Fallback: If still fewer than 8 videos, scrape YouTube homepage initial data
     if (videos.length < 8 && !params && bridgeClient.getIsAvailable()) {
       try {
         const scrapedData = await bridgeClient.scrapeYouTubePage('https://www.youtube.com/');
@@ -1954,12 +1988,32 @@ export class InnertubeService {
 
     for (const q of topics) {
       try {
+        // 1. Try Desktop YouTube Search for authentic video cards
+        const searchData = await this.fetchDesktopYouTubeEndpoint('search', { query: q });
+        if (searchData) {
+          const parsed = this.parseVideoItemsFromBrowse(searchData);
+          for (const v of parsed) {
+            if (seenIds.has(v.id)) continue;
+            const count = creatorCount[v.channelName] || 0;
+            if (count >= 2) continue;
+            seenIds.add(v.id);
+            creatorCount[v.channelName] = count + 1;
+            results.push(v);
+            if (results.length >= 24) break;
+          }
+        }
+      } catch {}
+
+      if (results.length >= 24) break;
+
+      // 2. Secondary fallback via music search
+      try {
         const tracks = await this.search(q, 'all');
         for (const t of tracks) {
           if (seenIds.has(t.id)) continue;
           const creator = t.artist || 'YouTube Creator';
           const count = creatorCount[creator] || 0;
-          if (count >= 2) continue; // Prevent any creator from dominating!
+          if (count >= 2) continue;
 
           seenIds.add(t.id);
           creatorCount[creator] = count + 1;
@@ -2407,22 +2461,41 @@ export class InnertubeService {
       console.warn('[Koda Innertube] Failed to fetch FEmusic_liked_playlists:', err);
     }
 
-    // 2. Also query FEmusic_library_landing if playlists list is small to ensure created playlists are surfaced
-    if (playlists.length < 5) {
-      try {
-        const libraryData = await this.fetchInnerTubeEndpoint('browse', {
-          browseId: 'FEmusic_library_landing'
-        });
-        const parsedLib = this.parseUserPlaylists(libraryData);
-        for (const pl of parsedLib) {
-          if (!seen.has(pl.id)) {
-            seen.add(pl.id);
-            playlists.push(pl);
-          }
+    // 2. Also query FEmusic_library_landing
+    try {
+      const libraryData = await this.fetchInnerTubeEndpoint('browse', {
+        browseId: 'FEmusic_library_landing'
+      });
+      const parsedLib = this.parseUserPlaylists(libraryData);
+      for (const pl of parsedLib) {
+        if (!seen.has(pl.id)) {
+          seen.add(pl.id);
+          playlists.push(pl);
         }
-      } catch (err) {
-        console.warn('[Koda Innertube] Failed to fetch FEmusic_library_landing:', err);
       }
+    } catch (err) {
+      console.warn('[Koda Innertube] Failed to fetch FEmusic_library_landing:', err);
+    }
+
+    // 3. Also query YouTube FEplaylist_aggregation (video playlists and synced playlists)
+    try {
+      const videoPlaylists = await this.getVideoPlaylists();
+      for (const vp of videoPlaylists) {
+        const cleanId = `playlist_${vp.id.replace(/^VL/, '')}`;
+        if (!seen.has(cleanId)) {
+          seen.add(cleanId);
+          playlists.push({
+            id: cleanId,
+            title: vp.title,
+            subtitle: vp.videoCountText || `${vp.channelName ? `${vp.channelName} • ` : ''}Playlist`,
+            author: vp.channelName || 'You',
+            imageUrl: vp.thumbnailUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=80',
+            trackCount: vp.videoCountText ? parseInt(vp.videoCountText, 10) || undefined : undefined
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[Koda Innertube] Failed to fetch video playlists for user playlists:', err);
     }
 
     // Filter out redundant auto-playlists like Liked Music (VLLM / LM) from custom user playlists
@@ -2947,7 +3020,10 @@ export class InnertubeService {
 
     try {
       const sectionList =
-        data?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents || [];
+        data?.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents ||
+        data?.contents?.sectionListRenderer?.contents ||
+        data?.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents ||
+        [];
 
       for (const section of sectionList) {
         // 1. Check musicCardShelfRenderer (Top result card)
@@ -3244,15 +3320,24 @@ export class InnertubeService {
     const parseRenderer = (r: any) => {
       if (!r) return;
 
-      const title = this.getNodeText(r.title);
+      const title =
+        this.getNodeText(r.title) ||
+        this.getNodeText(r.metadata?.lockupMetadataViewModel?.title) ||
+        r.accessibilityText ||
+        '';
       if (!title) return;
 
-      // Extract browseId or playlistId
+      // Extract browseId or playlistId from all known variations
       const browseId =
         r.navigationEndpoint?.browseEndpoint?.browseId ||
-        r.title?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId ||
         r.navigationEndpoint?.watchPlaylistEndpoint?.playlistId ||
-        r.contentId;
+        r.navigationEndpoint?.watchEndpoint?.playlistId ||
+        r.title?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId ||
+        r.contentId ||
+        r.rendererContext?.commandContext?.onTap?.innertubeCommand?.browseEndpoint?.browseId ||
+        r.rendererContext?.commandContext?.onTap?.innertubeCommand?.watchEndpoint?.playlistId ||
+        r.onTap?.innertubeCommand?.browseEndpoint?.browseId ||
+        r.onTap?.innertubeCommand?.watchEndpoint?.playlistId;
 
       if (!browseId) return;
 
@@ -3272,12 +3357,18 @@ export class InnertubeService {
       if (seenIds.has(cleanId)) return;
       seenIds.add(cleanId);
 
-      const rawSub = this.getNodeText(r.subtitle);
+      const rawSub =
+        this.getNodeText(r.subtitle) ||
+        this.getNodeText(r.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows?.[0]) ||
+        this.getNodeText(r.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.rowItems?.[0]) ||
+        '';
+
       const thumbs: any[] =
         r.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails ||
         r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails ||
         r.thumbnail?.thumbnails ||
         r.contentImage?.collectionThumbnailViewModel?.primaryThumbnail?.thumbnailViewModel?.image?.sources ||
+        r.contentImage?.thumbnailViewModel?.image?.sources ||
         [];
 
       let thumb = thumbs.slice(-1)[0]?.url || '';
@@ -3319,10 +3410,17 @@ export class InnertubeService {
       }
       if (node.lockupViewModel) {
         const ct = node.lockupViewModel.contentType;
+        const cid = node.lockupViewModel.contentId;
+        const bId =
+          node.lockupViewModel.rendererContext?.commandContext?.onTap?.innertubeCommand?.browseEndpoint?.browseId ||
+          node.lockupViewModel.onTap?.innertubeCommand?.browseEndpoint?.browseId ||
+          node.lockupViewModel.onTap?.innertubeCommand?.watchEndpoint?.playlistId;
+
         if (
           ct === 'LOCKUP_CONTENT_TYPE_PLAYLIST' ||
           ct === 'LOCKUP_CONTENT_TYPE_PODCAST' ||
-          node.lockupViewModel.contentId?.startsWith('PL')
+          (typeof cid === 'string' && (cid.startsWith('PL') || cid.startsWith('VL') || cid.startsWith('RD'))) ||
+          (typeof bId === 'string' && (bId.includes('PL') || bId.includes('VL')))
         ) {
           parseRenderer(node.lockupViewModel);
         }

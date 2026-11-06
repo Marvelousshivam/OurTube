@@ -1,7 +1,7 @@
 import { BridgeRequest, BridgeResponse } from '@koda/bridge-types';
 import { getAuthState, setSelectedChannelId } from './auth';
 import { handleProxyFetch, handleStreamResolution, handleScrapePage } from './proxy';
-import { installDynamicRules, installExtensionFetchRule } from './rules';
+import { installDynamicRules, installExtensionFetchRule, ensureOriginDNRRules } from './rules';
 
 console.log('[OurTube Companion] Background Service Worker initialized.');
 
@@ -45,6 +45,18 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
   if (!message || (message.channel !== 'KODA_BRIDGE_REQ' && message.channel !== 'OURTUBE_BRIDGE_REQ')) return;
 
   const resChannel = message.channel === 'OURTUBE_BRIDGE_REQ' ? 'OURTUBE_BRIDGE_RES' : 'KODA_BRIDGE_RES';
+
+  // Automatically register DNR rules for whichever origin or preview domain is sending requests
+  const senderOrigin = _sender?.origin || (() => {
+    try {
+      return _sender?.url ? new URL(_sender.url).origin : '';
+    } catch {
+      return '';
+    }
+  })();
+  if (senderOrigin) {
+    ensureOriginDNRRules(senderOrigin).catch(() => {});
+  }
 
   (async () => {
     try {
