@@ -1,30 +1,40 @@
 import React from 'react';
 
-export type NavTab = 'home' | 'search' | 'library' | 'settings';
+export type NavTab = 'home' | 'search' | 'subscriptions' | 'library' | 'settings';
 
 export interface FloatingNavigationDockProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   scrollContainerRef?: React.RefObject<HTMLElement | null>;
   isDockHidden?: boolean;
+  videoMode?: boolean;
 }
 
-const NAV_ITEMS: { id: NavTab; label: string; icon: string }[] = [
+const MUSIC_NAV_ITEMS: { id: NavTab; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'search', label: 'Search', icon: 'search' },
+  { id: 'library', label: 'Library', icon: 'library_music' }
+];
+
+const VIDEO_NAV_ITEMS: { id: NavTab; label: string; icon: string }[] = [
+  { id: 'home', label: 'Home', icon: 'home' },
+  { id: 'search', label: 'Search', icon: 'search' },
+  { id: 'subscriptions', label: 'Feed', icon: 'subscriptions' },
   { id: 'library', label: 'Library', icon: 'video_library' }
 ];
 
-const SLOT_WIDTH = 104; // Each slot has identical width for architectural symmetry
-const SLOT_GAP = 4;
 const PADDING = 4;
+const SLOT_GAP = 4;
 
 export const FloatingNavigationDock: React.FC<FloatingNavigationDockProps> = ({
   currentTab,
   onSelectTab,
-  isDockHidden = false
+  isDockHidden = false,
+  videoMode = false
 }) => {
-  const activeIndex = NAV_ITEMS.findIndex((item) => item.id === currentTab);
+  const navItems = videoMode ? VIDEO_NAV_ITEMS : MUSIC_NAV_ITEMS;
+  const slotWidth = videoMode ? 78 : 96;
+  const activeIndex = navItems.findIndex((item) => item.id === currentTab);
   const isPillVisible = activeIndex !== -1;
 
   return (
@@ -60,8 +70,8 @@ export const FloatingNavigationDock: React.FC<FloatingNavigationDockProps> = ({
           top: `${PADDING}px`,
           bottom: `${PADDING}px`,
           left: `${PADDING}px`,
-          width: `${SLOT_WIDTH}px`,
-          transform: `translateX(${isPillVisible ? activeIndex * (SLOT_WIDTH + SLOT_GAP) : 0}px)`,
+          width: `${slotWidth}px`,
+          transform: `translateX(${isPillVisible ? activeIndex * (slotWidth + SLOT_GAP) : 0}px)`,
           borderRadius: '9999px',
           backgroundColor: 'var(--md-sys-color-secondary-container)',
           boxShadow: '0 1px 4px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.08))',
@@ -73,7 +83,7 @@ export const FloatingNavigationDock: React.FC<FloatingNavigationDockProps> = ({
         }}
       />
 
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const isActive = currentTab === item.id;
         return (
           <button
@@ -82,7 +92,7 @@ export const FloatingNavigationDock: React.FC<FloatingNavigationDockProps> = ({
             style={{
               position: 'relative',
               zIndex: 1,
-              width: `${SLOT_WIDTH}px`,
+              width: `${slotWidth}px`,
               height: '38px',
               display: 'flex',
               alignItems: 'center',

@@ -1,333 +1,460 @@
-import React, { useState, useEffect } from 'react';
-import { bridgeClient } from '../../api/bridgeClient';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { bridgeClient, ExtensionConnectionState } from '../../api/bridgeClient';
+import { SupportedBrowser, BrowserSelectorPills } from './BrowserSelectorPills';
+import { BrowserExtensionMockup } from './BrowserExtensionMockup';
+import { OnboardingStepper } from './OnboardingStepper';
+import { TroubleshootingSheet } from './TroubleshootingSheet';
+import { MaterialYouPaletteBar } from './MaterialYouPaletteBar';
+import { AppShowcasePreview } from './AppShowcasePreview';
+
+type OnboardingViewMode = 'showcase' | 'setup' | 'both';
 
 export const ExtensionRequiredGate: React.FC = () => {
+  const [viewMode, setViewMode] = useState<OnboardingViewMode>('both');
+  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [browser, setBrowser] = useState<SupportedBrowser>('Chrome');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [browserName, setBrowserName] = useState('Chrome');
-  const [extensionUrl, setExtensionUrl] = useState('chrome://extensions');
+  const [isDevModeToggled, setIsDevModeToggled] = useState(false);
+  const [connectionState, setConnectionState] = useState<ExtensionConnectionState>(
+    bridgeClient.getConnectionState()
+  );
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const setupSectionRef = useRef<HTMLDivElement>(null);
+
+  // Auto-detect browser from user agent
   useEffect(() => {
     if (typeof navigator !== 'undefined') {
       const ua = navigator.userAgent.toLowerCase();
       if (ua.includes('edg/')) {
-        setBrowserName('Edge');
-        setExtensionUrl('edge://extensions');
+        setBrowser('Edge');
       } else if (ua.includes('brave') || (navigator as any).brave) {
-        setBrowserName('Brave');
-        setExtensionUrl('brave://extensions');
+        setBrowser('Brave');
+      } else if (ua.includes('opr/') || ua.includes('opera') || ua.includes('vivaldi')) {
+        setBrowser('Chromium');
       } else {
-        setBrowserName('Chrome');
-        setExtensionUrl('chrome://extensions');
+        setBrowser('Chrome');
       }
     }
   }, []);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(extensionUrl);
+  // Listen to bridge state changes
+  useEffect(() => {
+    const unsubState = bridgeClient.onStateChange((state) => {
+      setConnectionState(state);
+      if (state === 'connected') {
+        setCurrentStep(4);
+      }
+    });
+
+    const unsubAvail = bridgeClient.onAvailabilityChange((available) => {
+      if (available) {
+        setConnectionState('connected');
+        setCurrentStep(4);
+      }
+    });
+
+    return () => {
+      unsubState();
+      unsubAvail();
+    };
+  }, []);
+
+  const handleCopyUrl = useCallback(() => {
+    let url = 'chrome://extensions';
+    if (browser === 'Edge') url = 'edge://extensions';
+    else if (browser === 'Brave') url = 'brave://extensions';
+
+    navigator.clipboard.writeText(url);
     setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 2000);
-  };
+    setTimeout(() => setCopiedUrl(false), 2200);
+  }, [browser]);
 
   const handleManualCheck = async () => {
     setChecking(true);
     await bridgeClient.checkNow();
-    setTimeout(() => setChecking(false), 600);
+    setTimeout(() => {
+      setChecking(false);
+    }, 700);
   };
+
+  const handleSetStep = (step: number) => {
+    if (step >= 1 && step <= 4) {
+      setCurrentStep(step);
+    }
+  };
+
+  const handleScrollToSetup = () => {
+    if (viewMode === 'showcase') {
+      setViewMode('setup');
+    } else if (setupSectionRef.current) {
+      setupSectionRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // Keyboard navigation for steps
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === 'ArrowRight' && currentStep < 4) {
+        setCurrentStep((prev) => prev + 1);
+      } else if (e.key === 'ArrowLeft' && currentStep > 1) {
+        setCurrentStep((prev) => prev - 1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentStep]);
+
+  const isConnected = connectionState === 'connected';
 
   return (
     <div
+      ref={containerRef}
       style={{
-        minHeight: '100vh',
-        width: '100%',
-        backgroundColor: '#0f1013',
-        color: '#e2e2e6',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: '100vh',
+        width: '100vw',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        backgroundColor: 'var(--md-sys-color-background, #111318)',
+        color: 'var(--md-sys-color-on-background, #e2e2e9)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        padding: '32px 16px',
+        padding: '24px 20px 100px 20px',
         boxSizing: 'border-box',
-        fontFamily: "'Roboto Flex', system-ui, -apple-system, sans-serif"
+        fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+        zIndex: 9999
       }}
     >
-      <div style={{ width: '100%', maxWidth: '560px' }}>
-        {/* App Title & Subtitle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              backgroundColor: '#e53935',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}
-          >
-            <span
-              className="material-symbols-rounded"
-              style={{ fontSize: '20px', color: '#ffffff', marginLeft: '2px' }}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '1240px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '28px'
+        }}
+      >
+        {/* ================= 1. TOP APP BAR & BRAND HEADER ================= */}
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px',
+            paddingBottom: '16px',
+            borderBottom: '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))'
+          }}
+        >
+          {/* Brand Logo & Name */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '12px',
+                backgroundColor: '#e53935',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 8px 24px -4px rgba(229, 57, 53, 0.5)',
+                flexShrink: 0
+              }}
             >
-              play_arrow
-            </span>
-          </div>
-          <h1
-            style={{
-              fontSize: '20px',
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              margin: 0,
-              color: '#ffffff'
-            }}
-          >
-            OurTube Companion
-          </h1>
-        </div>
-
-        <p
-          style={{
-            fontSize: '13px',
-            lineHeight: 1.5,
-            color: '#91909a',
-            margin: '0 0 24px 0'
-          }}
-        >
-          OurTube relies on a companion extension to stream YouTube Music audio and sync your library without CORS restrictions or API keys. Playback cannot start until the extension is loaded.
-        </p>
-
-        {/* Status Section */}
-        <div
-          style={{
-            backgroundColor: '#17181c',
-            borderRadius: '12px',
-            border: '1px solid rgba(255, 255, 255, 0.07)',
-            overflow: 'hidden',
-            marginBottom: '20px'
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '12px 16px',
-              fontSize: '13px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
-            }}
-          >
-            <span style={{ color: '#91909a' }}>Status</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontWeight: 500, color: '#f28b82' }}>
               <span
-                style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '50%',
-                  backgroundColor: '#f28b82'
-                }}
-              />
-              Not installed
-            </span>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '12px 16px',
-              fontSize: '13px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
-            }}
-          >
-            <span style={{ color: '#91909a' }}>Latest build</span>
-            <span style={{ color: '#c4c6cf' }}>v1.0.0 (Chromium MV3)</span>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '12px 16px',
-              fontSize: '13px'
-            }}
-          >
-            <span style={{ color: '#91909a' }}>Bridge listener</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#91909a' }}>
-              <span
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: '#8ab4f8',
-                  animation: 'pulse 1.8s infinite'
-                }}
-              />
-              Listening on tab focus...
-            </span>
-          </div>
-        </div>
-
-        {/* Section Header */}
-        <h2
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: '#8e9099',
-            margin: '0 0 10px 4px'
-          }}
-        >
-          Get the extension
-        </h2>
-
-        {/* Download Row */}
-        <div
-          style={{
-            backgroundColor: '#17181c',
-            borderRadius: '12px',
-            border: '1px solid rgba(255, 255, 255, 0.07)',
-            overflow: 'hidden',
-            marginBottom: '16px'
-          }}
-        >
-          <a
-            href="/downloads/ourtube-companion.zip"
-            download="ourtube-companion.zip"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px',
-              padding: '14px 16px',
-              textDecoration: 'none',
-              color: 'inherit',
-              transition: 'background-color 150ms ease'
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1f2025')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-          >
-            <span
-              className="material-symbols-rounded"
-              style={{ fontSize: '24px', color: '#e53935', flexShrink: 0 }}
-            >
-              download_for_offline
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#ffffff' }}>
-                Download for {browserName} (.zip)
+                className="material-symbols-rounded"
+                style={{ fontSize: '24px', color: '#ffffff', marginLeft: '2px' }}
+              >
+                play_arrow
+              </span>
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    fontSize: '20px',
+                    fontWeight: 800,
+                    letterSpacing: '-0.02em',
+                    color: 'var(--md-sys-color-on-surface, #ffffff)'
+                  }}
+                >
+                  OurTube
+                </span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    backgroundColor: 'var(--md-sys-color-primary-container, rgba(168, 199, 250, 0.15))',
+                    color: 'var(--md-sys-color-primary, #a8c7fa)',
+                    padding: '2px 8px',
+                    borderRadius: '9999px'
+                  }}
+                >
+                  Onboarding
+                </span>
               </div>
-              <div style={{ fontSize: '12px', color: '#91909a', marginTop: '2px' }}>
-                Chrome, Brave, Edge &amp; Chromium &middot; 192 KB
+              <div style={{ fontSize: '11px', color: 'var(--md-sys-color-on-surface-variant, #91909a)' }}>
+                Material 3 Expressive &bull; Personal Audio Player
               </div>
             </div>
-            <span
-              className="material-symbols-rounded"
-              style={{ fontSize: '20px', color: '#686a73' }}
-            >
-              chevron_right
-            </span>
-          </a>
-        </div>
-
-        {/* Installation Steps */}
-        <div
-          style={{
-            backgroundColor: '#17181c',
-            borderRadius: '12px',
-            border: '1px solid rgba(255, 255, 255, 0.07)',
-            padding: '16px 20px',
-            marginBottom: '20px'
-          }}
-        >
-          <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8e9099', marginBottom: '12px' }}>
-            Installation Steps
           </div>
 
-          <ol
-            style={{
-              margin: 0,
-              paddingLeft: '18px',
-              fontSize: '13px',
-              lineHeight: 1.65,
-              color: '#c4c6cf'
-            }}
-          >
-            <li style={{ marginBottom: '8px' }}>
-              Extract the downloaded <code style={{ backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 5px', borderRadius: '4px', fontSize: '12px', color: '#ffffff' }}>ourtube-companion.zip</code> file. It contains a single folder: <code style={{ backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 5px', borderRadius: '4px', fontSize: '12px', color: '#ffffff' }}>ourtube-companion/</code>.
-            </li>
-            <li style={{ marginBottom: '8px' }}>
-              In a new tab, open{' '}
-              <code style={{ backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 5px', borderRadius: '4px', fontSize: '12px', color: '#ffffff' }}>
-                {extensionUrl}
-              </code>
-              <button
-                onClick={handleCopy}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '5px',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  padding: '1px 6px',
-                  marginLeft: '6px',
-                  cursor: 'pointer',
-                  verticalAlign: 'middle'
-                }}
-              >
-                {copiedUrl ? 'Copied' : 'Copy'}
-              </button>
-              {' '}and turn on <strong>Developer mode</strong> (top-right toggle).
-            </li>
-            <li style={{ marginBottom: '8px' }}>
-              Click <strong>Load unpacked</strong> (top-left) and select the extracted <code style={{ backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 5px', borderRadius: '4px', fontSize: '12px', color: '#ffffff' }}>ourtube-companion</code> folder.
-            </li>
-            <li>
-              Return to this tab: OurTube will detect the extension and unlock playback automatically.
-            </li>
-          </ol>
-        </div>
+          {/* Right Header: Material You Palette Switcher & Live Radar Status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <MaterialYouPaletteBar />
 
-        {/* Manual Check & Privacy Footnote */}
+            {/* Live Radar Pill */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 14px',
+                borderRadius: '9999px',
+                backgroundColor: isConnected
+                  ? 'rgba(128, 203, 196, 0.15)'
+                  : 'var(--md-sys-color-surface-container, rgba(255, 255, 255, 0.05))',
+                border: isConnected
+                  ? '1px solid #80cbc4'
+                  : '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: isConnected ? '#80cbc4' : 'var(--md-sys-color-on-surface, #c4c6cf)'
+              }}
+            >
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: isConnected ? '#80cbc4' : '#8ab4f8',
+                  boxShadow: isConnected ? '0 0 10px #80cbc4' : '0 0 8px #8ab4f8',
+                  animation: isConnected ? 'none' : 'm3RadarPulse 2s infinite'
+                }}
+              />
+              <span>
+                {isConnected ? 'Bridge Active & Ready' : 'Listening on tab focus...'}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* ================= 2. VIEW MODE TOGGLE PILL DOCK ================= */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            fontSize: '12px',
-            color: '#767882',
-            padding: '0 4px'
+            flexWrap: 'wrap',
+            gap: '12px'
           }}
         >
-          <span>Sign-ins and streams stay on-device inside your browser.</span>
-          <button
-            onClick={handleManualCheck}
-            disabled={checking}
+          {/* View switcher buttons */}
+          <div
             style={{
-              background: 'none',
-              border: 'none',
-              color: checking ? '#767882' : '#8ab4f8',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: checking ? 'default' : 'pointer',
-              padding: '4px 8px'
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px',
+              backgroundColor: 'var(--md-sys-color-surface-container, #1d2024)',
+              borderRadius: '9999px',
+              border: '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))',
+              gap: '4px'
             }}
           >
-            {checking ? 'Checking...' : 'Check now'}
-          </button>
+            {[
+              { id: 'both', label: 'All-in-One (Showcase + Setup)', icon: 'auto_awesome' },
+              { id: 'showcase', label: '✨ Peek Inside App', icon: 'visibility' },
+              { id: 'setup', label: '⚡ 4-Step Quick Setup', icon: 'install_desktop' }
+            ].map((mode) => {
+              const isSelected = viewMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setViewMode(mode.id as any)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 16px',
+                    borderRadius: '9999px',
+                    border: 'none',
+                    backgroundColor: isSelected
+                      ? 'var(--md-sys-color-primary, #a8c7fa)'
+                      : 'transparent',
+                    color: isSelected
+                      ? 'var(--md-sys-color-on-primary, #083063)'
+                      : 'var(--md-sys-color-on-surface-variant, #91909a)',
+                    fontSize: '12px',
+                    fontWeight: isSelected ? 700 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 200ms cubic-bezier(0.16, 1, 0.3, 1)'
+                  }}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>
+                    {mode.icon}
+                  </span>
+                  <span>{mode.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Browser Selector Pills */}
+          <BrowserSelectorPills
+            selectedBrowser={browser}
+            onSelectBrowser={setBrowser}
+          />
         </div>
+
+        {/* ================= 3. SECTION: PEEK INSIDE APP SHOWCASE ================= */}
+        {(viewMode === 'showcase' || viewMode === 'both') && (
+          <section>
+            <AppShowcasePreview onStartSetup={handleScrollToSetup} />
+          </section>
+        )}
+
+        {/* ================= 4. SECTION: 4-STEP EXTENSION SETUP WALKTHROUGH ================= */}
+        {(viewMode === 'setup' || viewMode === 'both') && (
+          <section
+            ref={setupSectionRef}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '24px',
+              paddingTop: viewMode === 'both' ? '24px' : '0',
+              borderTop: viewMode === 'both'
+                ? '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))'
+                : 'none'
+            }}
+          >
+            {/* Editorial Title for Setup */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--md-sys-color-primary, #a8c7fa)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>
+                  flash_on
+                </span>
+                60-Second Companion Setup
+              </div>
+
+              <h2
+                style={{
+                  fontFamily: "'Playfair Display', Georgia, serif",
+                  fontSize: 'clamp(26px, 3.5vw, 42px)',
+                  fontWeight: 800,
+                  letterSpacing: '-0.02em',
+                  color: 'var(--md-sys-color-on-surface, #ffffff)',
+                  margin: 0
+                }}
+              >
+                Unlock Your Experience in {browser}
+              </h2>
+
+              <p
+                style={{
+                  fontSize: '14px',
+                  lineHeight: 1.6,
+                  color: 'var(--md-sys-color-on-surface-variant, #91909a)',
+                  margin: 0,
+                  maxWidth: '740px'
+                }}
+              >
+                Follow these 4 simple steps to connect the local audio bridge. The extension runs entirely on your device with zero cloud tracking.
+              </p>
+            </div>
+
+            {/* Expansive Two-Column Spread */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))',
+                gap: '32px',
+                alignItems: 'start'
+              }}
+            >
+              {/* Left Column: Interactive Stepper & Action Deck */}
+              <div>
+                <OnboardingStepper
+                  currentStep={currentStep}
+                  totalSteps={4}
+                  onSetStep={handleSetStep}
+                  browser={browser}
+                  isChecking={checking}
+                  onManualCheck={handleManualCheck}
+                  copiedUrl={copiedUrl}
+                  onCopyUrl={handleCopyUrl}
+                  isConnected={isConnected}
+                />
+              </div>
+
+              {/* Right Column: Interactive Browser Extension Mockup */}
+              <div style={{ position: 'sticky', top: '24px' }}>
+                <BrowserExtensionMockup
+                  currentStep={currentStep}
+                  browser={browser}
+                  isDevModeActive={isDevModeToggled}
+                  onToggleDevMode={() => setIsDevModeToggled((prev) => !prev)}
+                  isConnected={isConnected}
+                  copiedUrl={copiedUrl}
+                  onCopyUrl={handleCopyUrl}
+                />
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 8px 0 8px',
+                    fontSize: '11px',
+                    color: '#767882'
+                  }}
+                >
+                  <span>Use &larr; / &rarr; keys to switch steps</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="material-symbols-rounded" style={{ fontSize: '13px' }}>
+                      verified_user
+                    </span>
+                    100% Client-Side Private Bridge
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ================= 5. COLLAPSIBLE FAQ & PRIVACY DRAWER ================= */}
+        <TroubleshootingSheet />
       </div>
 
       <style>{`
-        @keyframes pulse {
-          0% { opacity: 0.4; }
-          50% { opacity: 1; }
-          100% { opacity: 0.4; }
+        @keyframes m3RadarPulse {
+          0% { transform: scale(1); opacity: 0.6; }
+          50% { transform: scale(1.25); opacity: 1; }
+          100% { transform: scale(1); opacity: 0.6; }
         }
       `}</style>
     </div>

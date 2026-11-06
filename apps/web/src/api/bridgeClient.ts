@@ -57,6 +57,29 @@ const INITIAL_AUTH_STATE: AuthState = {
   selectedChannel: INITIAL_PRIMARY_CHANNEL
 };
 
+function sanitizeAuthState(state: AuthState): AuthState {
+  if (!state || !state.accounts) return state;
+  for (const acc of state.accounts) {
+    if (acc.channels) {
+      for (const ch of acc.channels) {
+        // Strip out any leaked Google Account Gaia IDs that were mistakenly treated as brand pageIds
+        if (ch.pageId && (ch.pageId.length > 15 || ch.pageId === 'undefined')) {
+          ch.pageId = null;
+          ch.brand = false;
+          ch.id = `${ch.authUser}:own`;
+        }
+      }
+    }
+  }
+  if (state.selectedChannel && state.selectedChannel.pageId && (state.selectedChannel.pageId.length > 15 || state.selectedChannel.pageId === 'undefined')) {
+    state.selectedChannel.pageId = null;
+    state.selectedChannel.brand = false;
+    state.selectedChannel.id = `${state.selectedChannel.authUser}:own`;
+    state.selectedChannelId = state.selectedChannel.id;
+  }
+  return state;
+}
+
 function loadCachedAuth(): AuthState {
   if (typeof window === 'undefined') return INITIAL_AUTH_STATE;
   try {
@@ -64,7 +87,7 @@ function loadCachedAuth(): AuthState {
     if (cached) {
       const parsed = JSON.parse(cached);
       if (parsed && parsed.accounts && parsed.accounts.length > 0) {
-        return parsed;
+        return sanitizeAuthState(parsed);
       }
     }
   } catch {
@@ -89,6 +112,7 @@ class BridgeClient {
   private authState: AuthState = loadCachedAuth();
   private listeners: Set<(available: boolean) => void> = new Set();
   private stateListeners: Set<(state: ExtensionConnectionState) => void> = new Set();
+  private accountListeners: Set<(auth: AuthState) => void> = new Set();
   private pollTimer: number | null = null;
   private checkGraceTimer: number | null = null;
 
@@ -130,6 +154,24 @@ class BridgeClient {
     return () => {
       this.stateListeners.delete(callback);
     };
+  }
+
+  public onAccountChange(callback: (auth: AuthState) => void): () => void {
+    this.accountListeners.add(callback);
+    callback(this.authState);
+    return () => {
+      this.accountListeners.delete(callback);
+    };
+  }
+
+  private notifyAccountChange() {
+    this.accountListeners.forEach((cb) => {
+      try {
+        cb(this.authState);
+      } catch (err) {
+        console.warn('[BridgeClient] Error in account listener:', err);
+      }
+    });
   }
 
   public getIsAvailable(): boolean {
@@ -232,10 +274,14 @@ class BridgeClient {
       return this.authState;
     }
     try {
+      const prevChannelId = this.authState.selectedChannelId;
       const auth = await this.sendRequest<AuthState>('KODA_BRIDGE_GET_AUTH');
       if (auth && auth.accounts && auth.accounts.length > 0) {
         this.authState = auth;
         saveCachedAuth(auth);
+        if (auth.selectedChannelId !== prevChannelId) {
+          this.notifyAccountChange();
+        }
       }
       return this.authState;
     } catch (err) {
@@ -246,7 +292,15 @@ class BridgeClient {
 
   public async selectAccount(channelId: string): Promise<AuthState> {
     const allChannels = this.authState.accounts.flatMap((a) => a.channels);
-    const targetChannel = allChannels.find((c) => c.id === channelId);
+    let targetChannel = allChannels.find((c) => c.id === channelId);
+    if (!targetChannel) {
+      const [authPrefix] = channelId.split(':');
+      const matchingAccount = this.authState.accounts.find((a) => a.authUser === authPrefix);
+      if (matchingAccount && matchingAccount.channels.length > 0) {
+        targetChannel = matchingAccount.channels[0];
+      }
+    }
+
     if (targetChannel) {
       this.authState = {
         ...this.authState,
@@ -257,6 +311,7 @@ class BridgeClient {
     }
 
     if (!this.isAvailable) {
+      this.notifyAccountChange();
       return this.authState;
     }
 
@@ -266,11 +321,13 @@ class BridgeClient {
         this.authState = updatedAuth;
         saveCachedAuth(updatedAuth);
       }
-      return this.authState;
     } catch (err) {
       console.error('[OurTube Web] Account switch failed:', err);
-      return this.authState;
+    } finally {
+      // Notify listeners strictly AFTER extension has persisted the new active identity
+      this.notifyAccountChange();
     }
+    return this.authState;
   }
 
   public async sendRequest<T = any>(type: BridgeMessageType, payload?: any, timeoutMs: number = 10000): Promise<T> {
@@ -309,6 +366,16 @@ class BridgeClient {
       throw new Error('Extension bridge not connected. Please install the OurTube Companion Extension.');
     }
     return this.sendRequest<FetchResponsePayload>('KODA_BRIDGE_FETCH', payload);
+  }
+
+  public async scrapeYouTubePage(url?: string): Promise<any> {
+    if (!this.isAvailable) return null;
+    try {
+      return await this.sendRequest('KODA_BRIDGE_SCRAPE_HOME', { url }, 12000);
+    } catch (err) {
+      console.warn('[OurTube Web] Scrape page error:', err);
+      return null;
+    }
   }
 
   public async resolveStream(req: StreamResolutionRequest): Promise<StreamResolutionResponse> {

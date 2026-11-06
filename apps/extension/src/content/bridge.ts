@@ -33,22 +33,51 @@ window.addEventListener('message', (event) => {
   }
 
   const req = event.data as BridgeRequest;
+  const resChannel = req.channel === 'OURTUBE_BRIDGE_REQ' ? 'OURTUBE_BRIDGE_RES' : 'KODA_BRIDGE_RES';
 
-  chrome.runtime.sendMessage(req, (res: BridgeResponse) => {
-    if (chrome.runtime.lastError) {
-      const errRes: BridgeResponse = {
-        channel: req.channel === 'OURTUBE_BRIDGE_REQ' ? 'OURTUBE_BRIDGE_RES' : 'KODA_BRIDGE_RES',
+  // Guard against orphaned content script when extension is updated/reloaded
+  if (!chrome.runtime || !chrome.runtime.id) {
+    window.postMessage(
+      {
+        channel: resChannel,
         id: req.id,
         type: req.type,
         success: false,
-        error: chrome.runtime.lastError.message
-      };
-      window.postMessage(errRes, '*');
-      return;
-    }
+        error: 'Extension context invalidated. Please refresh this tab (F5).'
+      },
+      '*'
+    );
+    return;
+  }
 
-    if (res) {
-      window.postMessage(res, '*');
-    }
-  });
+  try {
+    chrome.runtime.sendMessage(req, (res: BridgeResponse) => {
+      if (chrome.runtime.lastError) {
+        const errRes: BridgeResponse = {
+          channel: resChannel,
+          id: req.id,
+          type: req.type,
+          success: false,
+          error: chrome.runtime.lastError.message
+        };
+        window.postMessage(errRes, '*');
+        return;
+      }
+
+      if (res) {
+        window.postMessage(res, '*');
+      }
+    });
+  } catch (err: any) {
+    window.postMessage(
+      {
+        channel: resChannel,
+        id: req.id,
+        type: req.type,
+        success: false,
+        error: err?.message || 'Extension context invalidated. Please refresh this tab (F5).'
+      },
+      '*'
+    );
+  }
 });

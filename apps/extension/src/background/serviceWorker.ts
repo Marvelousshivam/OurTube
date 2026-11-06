@@ -1,7 +1,7 @@
 import { BridgeRequest, BridgeResponse } from '@koda/bridge-types';
 import { getAuthState, setSelectedChannelId } from './auth';
-import { handleProxyFetch, handleStreamResolution } from './proxy';
-import { installDynamicRules } from './rules';
+import { handleProxyFetch, handleStreamResolution, handleScrapePage } from './proxy';
+import { installDynamicRules, installExtensionFetchRule } from './rules';
 
 console.log('[OurTube Companion] Background Service Worker initialized.');
 
@@ -31,11 +31,13 @@ async function autoInjectExistingTabs() {
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('[OurTube Companion] Installed successfully.');
   await installDynamicRules();
+  await installExtensionFetchRule();
   await autoInjectExistingTabs();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await installDynamicRules();
+  await installExtensionFetchRule();
   await autoInjectExistingTabs();
 });
 
@@ -50,6 +52,7 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
         case 'OURTUBE_BRIDGE_PING' as any:
         case 'KODA_BRIDGE_PING': {
           await installDynamicRules();
+          await installExtensionFetchRule();
           const response: BridgeResponse = {
             channel: resChannel,
             id: message.id,
@@ -121,6 +124,20 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
             type: message.type,
             success: true,
             data: streamResult
+          };
+          sendResponse(response);
+          break;
+        }
+
+        case 'OURTUBE_BRIDGE_SCRAPE_HOME' as any:
+        case 'KODA_BRIDGE_SCRAPE_HOME': {
+          const scrapeResult = await handleScrapePage(message.payload?.url || 'https://www.youtube.com/');
+          const response: BridgeResponse = {
+            channel: resChannel,
+            id: message.id,
+            type: message.type,
+            success: Boolean(scrapeResult),
+            data: scrapeResult
           };
           sendResponse(response);
           break;

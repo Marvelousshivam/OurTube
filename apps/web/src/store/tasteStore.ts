@@ -15,11 +15,34 @@ interface KodaDB extends DBSchema {
   };
 }
 
-let dbPromise: Promise<IDBPDatabase<KodaDB>> | null = null;
+const dbMap = new Map<string, Promise<IDBPDatabase<KodaDB>>>();
 
-function getDB() {
-  if (!dbPromise) {
-    dbPromise = openDB<KodaDB>('koda-web-db', 1, {
+function getActiveAccountId(): string {
+  try {
+    const raw = localStorage.getItem('koda_auth_cache');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.selectedChannelId) {
+        return sanitizeAccountId(parsed.selectedChannelId);
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return '0_own';
+}
+
+function sanitizeAccountId(id?: string | null): string {
+  if (!id) return '0_own';
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function getDB(accountId: string = getActiveAccountId()) {
+  const safeId = sanitizeAccountId(accountId);
+  const dbName = `koda-web-db-${safeId}`;
+
+  if (!dbMap.has(dbName)) {
+    const promise = openDB<KodaDB>(dbName, 1, {
       upgrade(db) {
         const historyStore = db.createObjectStore('history', { keyPath: 'trackId' });
         historyStore.createIndex('by-playedAt', 'playedAt');
@@ -28,11 +51,13 @@ function getDB() {
         db.createObjectStore('likedTracks', { keyPath: 'id' });
       }
     });
+    dbMap.set(dbName, promise);
   }
-  return dbPromise;
+  return dbMap.get(dbName)!;
 }
 
 interface TasteStoreState {
+  activeAccountId: string;
   likedTracks: TrackMetadata[];
   history: TasteEntry[];
   isLoading: boolean;
@@ -40,7 +65,7 @@ interface TasteStoreState {
   pickedGenres: string[];
   deckVerdicts: Record<string, 'YES' | 'NO' | 'LOVE'>;
   isTasteSetupCompleted: boolean;
-  loadInitialData: () => Promise<void>;
+  loadInitialData: (accountId?: string) => Promise<void>;
   recordPlayback: (track: TrackMetadata, completionRate: number) => Promise<void>;
   toggleLikeTrack: (track: TrackMetadata) => Promise<boolean>;
   isLiked: (trackId: string) => boolean;
@@ -50,56 +75,71 @@ interface TasteStoreState {
   setTasteSetupCompleted: (completed: boolean) => void;
 }
 
+const initialAccountId = getActiveAccountId();
+
 export const useTasteStore = create<TasteStoreState>((set, get) => ({
+  activeAccountId: initialAccountId,
   likedTracks: [],
   history: [],
   isLoading: true,
-  pickedArtists: JSON.parse(localStorage.getItem('koda_picked_artists') || '[]'),
-  pickedGenres: JSON.parse(localStorage.getItem('koda_picked_genres') || '[]'),
-  deckVerdicts: JSON.parse(localStorage.getItem('koda_deck_verdicts') || '{}'),
-  isTasteSetupCompleted: localStorage.getItem('koda_taste_setup_done') === 'true',
+  pickedArtists: JSON.parse(localStorage.getItem(`koda_picked_artists_${initialAccountId}`) || '[]'),
+  pickedGenres: JSON.parse(localStorage.getItem(`koda_picked_genres_${initialAccountId}`) || '[]'),
+  deckVerdicts: JSON.parse(localStorage.getItem(`koda_deck_verdicts_${initialAccountId}`) || '{}'),
+  isTasteSetupCompleted: localStorage.getItem(`koda_taste_setup_done_${initialAccountId}`) === 'true',
 
   togglePickedArtist: (artist: string) => {
+    const safeId = get().activeAccountId;
     const current = get().pickedArtists;
     const next = current.includes(artist)
       ? current.filter((a) => a !== artist)
       : [...current, artist];
-    localStorage.setItem('koda_picked_artists', JSON.stringify(next));
+    localStorage.setItem(`koda_picked_artists_${safeId}`, JSON.stringify(next));
     set({ pickedArtists: next });
   },
 
   togglePickedGenre: (genre: string) => {
+    const safeId = get().activeAccountId;
     const current = get().pickedGenres;
     const next = current.includes(genre)
       ? current.filter((g) => g !== genre)
       : [...current, genre];
-    localStorage.setItem('koda_picked_genres', JSON.stringify(next));
+    localStorage.setItem(`koda_picked_genres_${safeId}`, JSON.stringify(next));
     set({ pickedGenres: next });
   },
 
   recordDeckVerdict: (trackId: string, verdict: 'YES' | 'NO' | 'LOVE') => {
+    const safeId = get().activeAccountId;
     const current = { ...get().deckVerdicts, [trackId]: verdict };
-    localStorage.setItem('koda_deck_verdicts', JSON.stringify(current));
+    localStorage.setItem(`koda_deck_verdicts_${safeId}`, JSON.stringify(current));
     set({ deckVerdicts: current });
   },
 
   setTasteSetupCompleted: (completed: boolean) => {
-    localStorage.setItem('koda_taste_setup_done', String(completed));
+    const safeId = get().activeAccountId;
+    localStorage.setItem(`koda_taste_setup_done_${safeId}`, String(completed));
     set({ isTasteSetupCompleted: completed });
   },
 
-  loadInitialData: async () => {
+  loadInitialData: async (accountId?: string) => {
+    const targetId = sanitizeAccountId(accountId || getActiveAccountId());
     try {
-      const db = await getDB();
+      set({ isLoading: true, activeAccountId: targetId });
+      const db = await getDB(targetId);
       const liked = await db.getAll('likedTracks');
       const hist = await db.getAllFromIndex('history', 'by-playedAt');
+
       set({
+        activeAccountId: targetId,
         likedTracks: liked,
         history: hist.reverse(),
+        pickedArtists: JSON.parse(localStorage.getItem(`koda_picked_artists_${targetId}`) || '[]'),
+        pickedGenres: JSON.parse(localStorage.getItem(`koda_picked_genres_${targetId}`) || '[]'),
+        deckVerdicts: JSON.parse(localStorage.getItem(`koda_deck_verdicts_${targetId}`) || '{}'),
+        isTasteSetupCompleted: localStorage.getItem(`koda_taste_setup_done_${targetId}`) === 'true',
         isLoading: false
       });
     } catch (err) {
-      console.warn('[Koda TasteStore] Failed to load local data:', err);
+      console.warn(`[Koda TasteStore] Failed to load data for account ${targetId}:`, err);
       set({ isLoading: false });
     }
   },
@@ -107,7 +147,8 @@ export const useTasteStore = create<TasteStoreState>((set, get) => ({
   recordPlayback: async (track: TrackMetadata, completionRate: number) => {
     try {
       artistPhotoService.setArtistPhoto(track.artist, track.highResThumbnailUrl || track.thumbnailUrl);
-      const db = await getDB();
+      const currentId = get().activeAccountId;
+      const db = await getDB(currentId);
       const existing = await db.get('history', track.id);
       const entry: TasteEntry = {
         trackId: track.id,
@@ -133,7 +174,8 @@ export const useTasteStore = create<TasteStoreState>((set, get) => ({
 
   toggleLikeTrack: async (track: TrackMetadata) => {
     try {
-      const db = await getDB();
+      const currentId = get().activeAccountId;
+      const db = await getDB(currentId);
       const isCurrentlyLiked = get().isLiked(track.id);
 
       if (isCurrentlyLiked) {

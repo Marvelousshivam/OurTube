@@ -1,6 +1,6 @@
 import { Innertube, Platform, UniversalCache, Types } from 'youtubei.js/web';
 import { bridgeClient } from './bridgeClient';
-import { StreamResolutionResponse } from '@koda/bridge-types';
+import { StreamResolutionResponse, parseAudioTracksFromAdaptiveFormats, YouTubeAudioTrackOption } from '@koda/bridge-types';
 import { useSettingsStore } from '../store/settingsStore';
 
 const YOUTUBE_HOSTS = new Set(['music.youtube.com', 'www.youtube.com', 'youtube.com']);
@@ -44,7 +44,7 @@ async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit):
 let webInnertubeInstance: Innertube | null = null;
 let initPromise: Promise<Innertube> | null = null;
 
-async function getWebInnertube(): Promise<Innertube> {
+export async function getWebInnertube(): Promise<Innertube> {
   if (webInnertubeInstance) return webInnertubeInstance;
   if (initPromise) return initPromise;
 
@@ -78,6 +78,7 @@ export interface StreamOptions {
   videoId: string;
   quality?: 'auto' | '1080p' | '720p' | '480p' | '360p';
   mode?: 'music' | 'video';
+  audioTrackId?: string;
 }
 
 interface CachedStreamEntry {
@@ -90,7 +91,7 @@ const streamResolutionCache = new Map<string, CachedStreamEntry>();
 const inFlightStreamResolutions = new Map<string, Promise<StreamResolutionResponse>>();
 
 function getCacheKey(options: StreamOptions): string {
-  return `${options.videoId}:${options.quality || 'auto'}:${options.mode || 'music'}`;
+  return `${options.videoId}:${options.quality || 'auto'}:${options.mode || 'music'}:${options.audioTrackId || 'orig'}`;
 }
 
 export function getCachedStream(options: StreamOptions): StreamResolutionResponse | null {
@@ -164,7 +165,7 @@ export async function resolveStream(options: StreamOptions): Promise<StreamResol
 }
 
 async function _doResolveStream(options: StreamOptions): Promise<StreamResolutionResponse> {
-  const { videoId, quality = 'auto', mode = 'music' } = options;
+  const { videoId, quality = 'auto', mode = 'music', audioTrackId } = options;
 
   // 1. Companion extension bridge (direct host permissions in background, 0 CORS, supports signed sessions)
   if (bridgeClient.getIsAvailable()) {
@@ -172,10 +173,12 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
       const bridgeRes = await bridgeClient.resolveStream({
         videoId,
         quality,
-        mode
+        mode,
+        audioTrackId
       });
 
-      if (bridgeRes?.audioUrl) {
+      // In video mode, ONLY accept bridge response if videoUrl is actually resolved!
+      if (bridgeRes && (mode !== 'video' ? Boolean(bridgeRes.audioUrl) : Boolean(bridgeRes.videoUrl))) {
         return bridgeRes;
       }
     } catch (bridgeErr) {
@@ -188,9 +191,10 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
     const res = await window.fetch(`/api/resolve-stream?videoId=${encodeURIComponent(videoId)}`);
     if (res.ok) {
       const data = await res.json();
-      if (data?.audioUrl) {
+      if (data?.audioUrl && (mode !== 'video' || data?.videoUrl)) {
         return {
           audioUrl: data.audioUrl,
+          videoUrl: data.videoUrl,
           audioBitrate: data.audioBitrate,
           videoQuality: quality,
           expiresInSeconds: data.expiresInSeconds || 21600,
@@ -209,6 +213,16 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
     const adaptiveFormats: any[] = res.data?.streamingData?.adaptiveFormats || [];
     const formats: any[] = res.data?.streamingData?.formats || [];
 
+    // Parse audio tracks to guarantee original audio preference & eliminate regional auto-dubs
+    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptiveFormats);
+    let selectedTrack: YouTubeAudioTrackOption | undefined;
+    if (audioTrackId) {
+      selectedTrack = audioTracks.find((t) => t.id === audioTrackId);
+    }
+    if (!selectedTrack) {
+      selectedTrack = audioTracks.find((t) => t.isOriginal) || audioTracks[0];
+    }
+
     const qualityPref = useSettingsStore.getState().audioQuality;
 
     const audioFormats = adaptiveFormats
@@ -217,7 +231,9 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
 
     // Choose audio stream respecting Audio Quality setting (High, Normal, Saver)
     let bestAudio: any;
-    if (qualityPref === 'saver') {
+    if (selectedTrack?.url) {
+      bestAudio = { url: selectedTrack.url, bitrate: selectedTrack.bitrate, mimeType: 'audio/mp4' };
+    } else if (qualityPref === 'saver') {
       bestAudio = audioFormats[audioFormats.length - 1] || audioFormats[0];
     } else if (qualityPref === 'normal') {
       bestAudio =
@@ -232,55 +248,108 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
 
     let bestVideo: any = null;
     if (mode === 'video') {
+      // If alternate soundtracks/dubs exist, NEVER use muxed formats, because YouTube muxes regional dubs!
+      const hasDubsOrChoice = audioTracks.length > 1 || (selectedTrack && !selectedTrack.isOriginal);
+
+      const muxedFormats = formats
+        .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url)
+        .sort((a, b) => (b.height || 0) - (a.height || 0));
+
       const videoFormats = adaptiveFormats
         .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url)
         .sort((a, b) => (b.height || 0) - (a.height || 0));
 
-      if (quality !== 'auto') {
-        const targetHeight = parseInt(quality.replace('p', ''), 10);
-        bestVideo = videoFormats.find((f) => f.height === targetHeight) || videoFormats[0];
+      if (!hasDubsOrChoice && muxedFormats.length > 0 && (!quality || quality === 'auto' || quality === '720p' || quality === '360p')) {
+        bestVideo = muxedFormats[0];
+        if (!bestAudio?.url) bestAudio = bestVideo;
       } else {
-        bestVideo = videoFormats[0];
+        if (quality !== 'auto') {
+          const targetHeight = parseInt(quality.replace('p', ''), 10);
+          bestVideo = videoFormats.find((f) => f.height === targetHeight) || videoFormats[0];
+        } else {
+          bestVideo = videoFormats[0];
+        }
       }
     }
 
-    if (bestAudio?.url) {
-      console.log('[OurTube StreamResolver] Direct VISIONOS resolution successful:', bestAudio.mimeType, bestAudio.bitrate);
+    const hasRequiredStreams = mode === 'video'
+      ? Boolean(bestVideo?.url)
+      : Boolean(bestAudio?.url);
+
+    if (hasRequiredStreams && (bestAudio?.url || bestVideo?.url)) {
+      console.log('[OurTube StreamResolver] Direct VISIONOS resolution successful:', bestAudio?.mimeType || bestVideo?.mimeType);
       return {
-        audioUrl: bestAudio.url,
+        audioUrl: selectedTrack?.url || bestAudio?.url || bestVideo?.url,
         videoUrl: bestVideo?.url,
-        audioBitrate: bestAudio.bitrate,
+        audioBitrate: selectedTrack?.bitrate || bestAudio?.bitrate,
         videoQuality: bestVideo ? `${bestVideo.height}p` : undefined,
         expiresInSeconds: res.data?.streamingData?.expiresInSeconds
           ? parseInt(res.data.streamingData.expiresInSeconds, 10)
           : 21600,
-        format: bestAudio.mimeType
+        format: bestVideo?.mimeType || bestAudio?.mimeType,
+        audioTracks,
+        selectedAudioTrackId: selectedTrack?.id
       };
     }
   } catch (directErr) {
     console.warn('[StreamResolver] Direct VISIONOS resolution error:', directErr);
   }
 
-  // 4. Fallback: getInfo with signature deciphering
+  // 4. Comprehensive Fallback: getInfo with signature and n-token deciphering
   try {
     const yt = await getWebInnertube();
     const info = await yt.getInfo(videoId);
-    const audio = info.chooseFormat({ type: 'audio', quality: 'best' });
-    const video = mode === 'video' ? info.chooseFormat({ type: 'video', quality: 'best' }) : null;
 
-    const audioUrl = audio ? await audio.decipher(yt.session.player) : undefined;
-    const videoUrl = video ? await video.decipher(yt.session.player) : undefined;
+    if (mode === 'video') {
+      let chosenVideoFormat: any = null;
+      let chosenAudioFormat: any = null;
 
-    if (audioUrl) {
-      console.log('[OurTube StreamResolver] Deciphered audio resolution successful');
-      return {
-        audioUrl,
-        videoUrl,
-        audioBitrate: audio?.bitrate,
-        videoQuality: video ? `${video.height}p` : undefined,
-        expiresInSeconds: 21600,
-        format: audio?.mime_type
-      };
+      // For auto or standard quality (<= 720p), prefer muxed video+audio MP4
+      if (!quality || quality === 'auto' || quality === '720p' || quality === '360p') {
+        try {
+          chosenVideoFormat = info.chooseFormat({ type: 'video+audio', quality: quality || 'best' });
+          chosenAudioFormat = chosenVideoFormat;
+        } catch {}
+      }
+
+      // If no muxed format or higher quality (1080p+) requested, choose separate video and audio
+      if (!chosenVideoFormat) {
+        try {
+          chosenVideoFormat = info.chooseFormat({ type: 'video', quality: quality || 'best' });
+          chosenAudioFormat = info.chooseFormat({ type: 'audio', quality: 'best' });
+        } catch {}
+      }
+
+      const videoUrl = chosenVideoFormat ? await chosenVideoFormat.decipher(yt.session.player) : undefined;
+      const audioUrl = chosenAudioFormat ? await chosenAudioFormat.decipher(yt.session.player) : undefined;
+
+      if (videoUrl) {
+        console.log('[OurTube StreamResolver] Deciphered video resolution successful:', chosenVideoFormat?.quality_label);
+        return {
+          audioUrl: audioUrl || videoUrl,
+          videoUrl,
+          audioBitrate: chosenAudioFormat?.bitrate,
+          videoQuality: chosenVideoFormat?.quality_label || (chosenVideoFormat?.height ? `${chosenVideoFormat.height}p` : undefined),
+          expiresInSeconds: 21600,
+          format: chosenVideoFormat?.mime_type
+        };
+      }
+    } else {
+      // Audio / Music mode
+      const audio = info.chooseFormat({ type: 'audio', quality: 'best' });
+      const audioUrl = audio ? await audio.decipher(yt.session.player) : undefined;
+
+      if (audioUrl) {
+        console.log('[OurTube StreamResolver] Deciphered audio resolution successful');
+        return {
+          audioUrl,
+          videoUrl: undefined,
+          audioBitrate: audio?.bitrate,
+          videoQuality: undefined,
+          expiresInSeconds: 21600,
+          format: audio?.mime_type
+        };
+      }
     }
   } catch (decipherErr) {
     console.warn('[StreamResolver] Decipher resolution error:', decipherErr);

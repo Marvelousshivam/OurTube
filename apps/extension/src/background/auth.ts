@@ -9,7 +9,7 @@ const COOKIE_URLS = [
   'https://youtube.com/',
   'https://accounts.google.com/'
 ];
-const MAX_LOGINS = 10;
+const MAX_LOGINS = 3;
 const WEB_REMIX_VERSION = '1.20251006.03.00';
 
 export interface Identity {
@@ -86,7 +86,10 @@ export async function getSelectedChannelId(): Promise<string | null> {
   }
 }
 
+let cachedAuth: { data: AuthState; time: number } | null = null;
+
 export async function setSelectedChannelId(id: string): Promise<void> {
+  cachedAuth = null;
   try {
     await chrome.storage.local.set({ koda_selected_channel_id: id });
   } catch (err) {
@@ -126,6 +129,21 @@ function extractText(node: any): string {
 function extractPhoto(item: any): string | null {
   const thumbnails = item?.accountPhoto?.thumbnails || item?.thumbnail?.thumbnails;
   return thumbnails?.slice(-1)[0]?.url || null;
+}
+
+function extractPageId(item: any): string | null {
+  if (item?.pageId) return String(item.pageId);
+  if (item?.serviceEndpoint?.selectActiveIdentityEndpoint?.supportedTokens) {
+    for (const token of item.serviceEndpoint.selectActiveIdentityEndpoint.supportedTokens) {
+      if (token?.pageIdToken?.pageId) return String(token.pageIdToken.pageId);
+    }
+  }
+  if (item?.endpoint?.selectActiveIdentityEndpoint?.supportedTokens) {
+    for (const token of item.endpoint.selectActiveIdentityEndpoint.supportedTokens) {
+      if (token?.pageIdToken?.pageId) return String(token.pageIdToken.pageId);
+    }
+  }
+  return null;
 }
 
 async function signedFetch(
@@ -236,7 +254,7 @@ async function readLogin(authUser: string): Promise<YtAccount | null> {
         for (const item of items) {
           const chName = extractText(item.accountName);
           if (!chName) continue;
-          const pageId = item.pageId || null;
+          const pageId = extractPageId(item);
           const id = `${authUser}:${pageId ?? 'own'}`;
           if (channels.some((c) => c.id === id)) continue;
 
@@ -358,7 +376,12 @@ export async function discoverAccounts(): Promise<{ accounts: YtAccount[]; webIn
   return { accounts, webIndex };
 }
 
-export async function getAuthState(): Promise<AuthState> {
+export async function getAuthState(forceRefresh: boolean = false): Promise<AuthState> {
+  const now = Date.now();
+  if (!forceRefresh && cachedAuth && now - cachedAuth.time < 45000) {
+    return cachedAuth.data;
+  }
+
   const secret = await getSigningSecret();
 
   const primaryUserChannel: YtChannel = {
@@ -428,6 +451,18 @@ export async function getAuthState(): Promise<AuthState> {
 
   if (selectedChannelId) {
     selectedChannel = allChannels.find((c) => c.id === selectedChannelId) || null;
+    if (!selectedChannel) {
+      const [authPrefix] = selectedChannelId.split(':');
+      const matchingAccount = accounts.find((a) => a.authUser === authPrefix);
+      if (matchingAccount && matchingAccount.channels.length > 0) {
+        selectedChannel = matchingAccount.channels[0];
+      }
+    }
+  }
+
+  // Heal any corrupted or legacy channel ID stored in chrome.storage
+  if (selectedChannel && selectedChannel.id !== selectedChannelId) {
+    chrome.storage.local.set({ koda_selected_channel_id: selectedChannel.id }).catch(() => {});
   }
 
   if (!selectedChannel && webIndex !== null) {
@@ -441,7 +476,7 @@ export async function getAuthState(): Promise<AuthState> {
     selectedChannel = allChannels.find((c) => c.selectedOnWeb) || allChannels[0];
   }
 
-  return {
+  const result: AuthState = {
     isAuthenticated: true,
     sapisid: secret,
     sapisidHash,
@@ -449,4 +484,7 @@ export async function getAuthState(): Promise<AuthState> {
     selectedChannelId: selectedChannel?.id || null,
     selectedChannel
   };
+
+  cachedAuth = { data: result, time: Date.now() };
+  return result;
 }

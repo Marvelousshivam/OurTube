@@ -1,5 +1,5 @@
 const CORS_RESPONSE: chrome.declarativeNetRequest.ModifyHeaderInfo[] = [
-  { header: 'Access-Control-Allow-Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' },
+  { header: 'Access-Control-Allow-Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'http://localhost:5173' },
   { header: 'Access-Control-Allow-Credentials', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'true' },
   { header: 'Access-Control-Expose-Headers', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: '*' },
   { header: 'Access-Control-Allow-Methods', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: 'GET, POST, OPTIONS, HEAD' },
@@ -39,14 +39,16 @@ export async function installExtensionFetchRule(): Promise<void> {
       urlFilter: `||${hostPath}/`,
       tabIds: [-1],
       resourceTypes: [
-        chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST
+        chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+        chrome.declarativeNetRequest.ResourceType.OTHER
       ]
     },
     action: {
       type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
       requestHeaders: [
         { header: 'Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: origin },
-        { header: 'Referer', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `${origin}/` }
+        { header: 'Referer', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `${origin}/` },
+        { header: 'X-Origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: origin }
       ]
     }
   });

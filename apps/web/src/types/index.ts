@@ -1,5 +1,6 @@
 export type PlaybackMode = 'music' | 'video';
 export type VideoQuality = 'auto' | '1080p' | '720p' | '480p' | '360p';
+export * from './video';
 export type RepeatMode = 'off' | 'all' | 'one';
 export type PlayerStyle = 'EDITORIAL' | 'CLASSIC' | 'BENTO' | 'CANVAS' | 'GESTURE' | 'STICKER' | 'HERO' | 'MORPH' | 'DIAL';
 
@@ -94,3 +95,6 @@ export interface TasteEntry {
   completionRate: number; // 0 to 1
   isLiked?: boolean;
 }
+
+export type { YouTubeAudioTrackOption, StreamResolutionRequest, StreamResolutionResponse } from '@koda/bridge-types';
+

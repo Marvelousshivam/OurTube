@@ -23,6 +23,7 @@ export interface HomePageProps {
 export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist }) => {
   const [sections, setSections] = useState<HomeSection[]>([]);
   const [userPlaylists, setUserPlaylists] = useState<UserPlaylist[]>([]);
+  const [loadingPlaylists, setLoadingPlaylists] = useState(true);
   const [remoteHistory, setRemoteHistory] = useState<TrackMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [isWideScreen, setIsWideScreen] = useState(() =>
@@ -35,6 +36,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
 
   const loadFeed = () => {
     setLoading(true);
+    setLoadingPlaylists(true);
     innertubeService
       .getHomeFeed()
       .then((data) => {
@@ -48,8 +50,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
     // Also load authentic user playlists
     innertubeService
       .getUserPlaylists()
-      .then((pls) => setUserPlaylists(pls))
-      .catch(() => {});
+      .then((pls) => {
+        setUserPlaylists(pls);
+        setLoadingPlaylists(false);
+      })
+      .catch(() => {
+        setLoadingPlaylists(false);
+      });
 
     // Also load authentic YouTube Music listening history
     innertubeService
@@ -79,10 +86,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
       }
     });
 
+    const unsubAccount = bridgeClient.onAccountChange(() => {
+      loadFeed();
+    });
+
     return () => {
       window.removeEventListener('resize', handleResize);
       unsubPhotos();
       unsubBridge();
+      unsubAccount();
     };
   }, []);
 
@@ -127,7 +139,24 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
     const personalTracks: TrackMetadata[] = [];
     const seenIds = new Set<string>();
 
-    // 1. Tracks user has liked
+    // 1. YouTube Music authentic server-personalized mix / shelf (Mixed for you, My Supermix, Listen again, Quick picks)
+    const supermixShelf = sections.find((s) =>
+      /mixed for you|my supermix|your mix/i.test(s.title)
+    );
+    const listenAgainShelf = sections.find((s) =>
+      /listen again|quick picks|favorites|similar to|from your/i.test(s.title)
+    );
+    const personalizedShelf = supermixShelf || listenAgainShelf;
+    if (personalizedShelf) {
+      for (const item of personalizedShelf.items) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          personalTracks.push(item);
+        }
+      }
+    }
+
+    // 2. Tracks user has liked on this active account
     for (const track of likedTracks) {
       if (!seenIds.has(track.id)) {
         seenIds.add(track.id);
@@ -135,7 +164,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
       }
     }
 
-    // 2. Tracks user has played in history
+    // 3. Tracks user has played in history on this active account
     for (const h of history) {
       if (!seenIds.has(h.trackId)) {
         seenIds.add(h.trackId);
@@ -148,25 +177,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
       }
     }
 
-    // 3. Authentic personalized shelves from YouTube Music (e.g. Listen again, Mixed for you, Quick picks)
-    const personalizedShelf = sections.find((s) =>
-      /listen again|mixed for you|quick picks|my supermix|favorites|similar to|from your/i.test(s.title)
-    );
-    if (personalizedShelf) {
-      for (const item of personalizedShelf.items) {
-        if (!seenIds.has(item.id)) {
-          seenIds.add(item.id);
-          personalTracks.push(item);
-        }
-      }
-    }
-
-    // If we have at least 3 tracks from the user's authentic listening, use them!
+    // If we have at least 3 tracks from authentic shelves or account listening, return them!
     if (personalTracks.length >= 3) {
       return personalTracks.slice(0, 12);
     }
 
-    // Fallback if fresh account with no history yet
+    // Fallback if fresh account with no history or personalized shelf yet
     if (sections.length > 0) {
       return sections[0].items.slice(0, 12);
     }
@@ -611,7 +627,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
 
           {/* Card 2: Your Likes / Radio */}
           <div
-            onClick={() => {}}
+            onClick={() => {
+              if (onOpenPlaylist) {
+                onOpenPlaylist({
+                  id: 'playlist_LM',
+                  title: 'Your Likes',
+                  subtitle: `${likedTracks.length} songs`
+                });
+              }
+            }}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -649,6 +673,36 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               </span>
             </div>
           </div>
+
+          {/* Skeletons while loading playlists */}
+          {loadingPlaylists && userPlaylists.length === 0 && (
+            <>
+              {[0, 1].map((idx) => (
+                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div
+                    style={{
+                      width: '100%',
+                      aspectRatio: '1 / 1',
+                      borderRadius: '26px',
+                      backgroundColor: 'var(--md-sys-color-surface-container-high, rgba(255, 255, 255, 0.05))',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    <div className="m3-shimmer" />
+                  </div>
+                  <div
+                    style={{
+                      width: '70%',
+                      height: '14px',
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--md-sys-color-surface-container-high, rgba(255, 255, 255, 0.05))'
+                    }}
+                  />
+                </div>
+              ))}
+            </>
+          )}
 
           {/* User Playlists from YouTube Music (with 4-grid collages or cover art) */}
           {userPlaylists.slice(0, 6).map((pl) => (

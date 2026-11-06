@@ -13,6 +13,7 @@ export interface MiniPlayerProps {
 export const MiniPlayer: React.FC<MiniPlayerProps> = ({ isDockHidden = false, onOpenArtist }) => {
   const {
     currentTrack,
+    playbackMode,
     isPlaying,
     isBuffering,
     currentTime,
@@ -34,7 +35,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({ isDockHidden = false, on
   const [isSkipping, setIsSkipping] = useState(false);
   const [isPressingCard, setIsPressingCard] = useState(false);
 
-  if (!currentTrack) return null;
+  if (!currentTrack || playbackMode === 'video') return null;
 
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
   const highResThumb = sizedArtwork(currentTrack.highResThumbnailUrl || currentTrack.thumbnailUrl, 160);

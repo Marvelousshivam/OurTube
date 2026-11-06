@@ -3,8 +3,9 @@ import { useTasteStore } from '../store/tasteStore';
 import { usePlayerStore } from '../store/playerStore';
 import { bridgeClient } from '../api/bridgeClient';
 import { innertubeService, UserPlaylist } from '../api/innertubeService';
-import { AuthState, TrackMetadata } from '../types';
+import { AuthState, TrackMetadata, VideoItem } from '../types';
 import { sizedArtwork } from '../api/artworkService';
+import { VideoLibraryView } from '../components/library/VideoLibraryView';
 import { SHAPES } from '../design-system/tokens';
 import {
   MediaCard,
@@ -15,12 +16,28 @@ import {
 export interface LibraryPageProps {
   onOpenPlaylist?: (playlist: { id: string; title: string; subtitle?: string; imageUrl?: string; author?: string }) => void;
   onOpenArtist?: (artist: { id?: string; name: string; imageUrl?: string }) => void;
+  videoMode?: boolean;
+  onPlayVideo?: (video: VideoItem) => void;
 }
 
 type LibraryTab = 'all' | 'playlists' | 'liked' | 'artists' | 'history';
 type SortOption = 'default' | 'az' | 'tracks';
 
-export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenPlaylist, onOpenArtist }) => {
+export const LibraryPage: React.FC<LibraryPageProps> = ({
+  onOpenPlaylist,
+  onOpenArtist,
+  videoMode = false,
+  onPlayVideo
+}) => {
+  if (videoMode) {
+    return (
+      <VideoLibraryView
+        onPlayVideo={onPlayVideo || (() => {})}
+        onOpenPlaylist={onOpenPlaylist}
+      />
+    );
+  }
+
   const [activeTab, setActiveTab] = useState<LibraryTab>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');

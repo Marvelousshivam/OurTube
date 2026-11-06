@@ -1,5 +1,15 @@
 import { create } from 'zustand';
-import { TrackMetadata, PlaybackMode, VideoQuality, RepeatMode, PlayerStyle, LyricsData, QueueEntry } from '../types';
+import {
+  TrackMetadata,
+  PlaybackMode,
+  VideoQuality,
+  RepeatMode,
+  PlayerStyle,
+  LyricsData,
+  QueueEntry,
+  VideoItem,
+  YouTubeAudioTrackOption
+} from '../types';
 import { applyDynamicThemeFromImage } from '../theme/dynamicTheme';
 import { useTasteStore } from './tasteStore';
 import { resolveStream, prefetchStream } from '../api/streamResolver';
@@ -19,6 +29,7 @@ import { lyricsService } from '../api/lyricsService';
 // Monotonic request counter for bulletproof track activation and race-condition prevention
 let activePlaybackToken = 0;
 let isFetchingRadio = false;
+let sleepTimerHandle: any = null;
 
 interface PlayerState {
   currentTrack: TrackMetadata | null;
@@ -44,6 +55,35 @@ interface PlayerState {
   autoplay: boolean;
   lyricsData: LyricsData | null;
   isLyricsLoading: boolean;
+
+  // Video Mode State & Actions (Matching Koda VideoPlayerContent)
+  currentVideo: VideoItem | null;
+  isVideoWatchOpen: boolean;
+  isMiniVideoPlayerOpen: boolean;
+  videoPlaybackError: string | null;
+  playVideo: (video: VideoItem) => Promise<void>;
+  setVideoWatchOpen: (open: boolean) => void;
+  setMiniVideoPlayerOpen: (open: boolean) => void;
+  setVideoPlaybackError: (err: string | null) => void;
+  minimizeVideo: () => void;
+  closeVideo: () => void;
+  listenAsMusic: () => Promise<void>;
+
+  // Playback Control & Koda Features
+  playbackSpeed: number;
+  isHoldTo2x: boolean;
+  audioTracks: YouTubeAudioTrackOption[];
+  selectedAudioTrackId: string | null;
+  isLooping: boolean;
+  fitMode: 'fit' | 'fill';
+  sleepTimerEndsAt: number | null;
+  sleepTimerMinutes: number | null;
+  setPlaybackSpeed: (speed: number) => void;
+  setHoldTo2x: (active: boolean) => void;
+  setAudioTrack: (trackId: string) => Promise<void>;
+  toggleLoop: () => void;
+  toggleFitMode: () => void;
+  setSleepTimer: (minutes: number | null) => void;
 
   // Actions
   playTrack: (track: TrackMetadata, newQueue?: TrackMetadata[], sourceTitle?: string) => Promise<void>;
@@ -99,6 +139,195 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   autoplay: localStorage.getItem('ourtube_autoplay') !== 'false',
   lyricsData: null,
   isLyricsLoading: false,
+  currentVideo: null,
+  isVideoWatchOpen: false,
+  isMiniVideoPlayerOpen: false,
+  videoPlaybackError: null,
+
+  playbackSpeed: 1.0,
+  isHoldTo2x: false,
+  audioTracks: [],
+  selectedAudioTrackId: null,
+  isLooping: false,
+  fitMode: 'fit',
+  sleepTimerEndsAt: null,
+  sleepTimerMinutes: null,
+
+  setVideoPlaybackError: (err: string | null) => {
+    set({ videoPlaybackError: err });
+  },
+
+  setPlaybackSpeed: (speed: number) => {
+    set({ playbackSpeed: speed });
+  },
+
+  setHoldTo2x: (active: boolean) => {
+    set({ isHoldTo2x: active });
+  },
+
+  setAudioTrack: async (trackId: string) => {
+    const track = get().audioTracks.find((t) => t.id === trackId);
+    if (track?.url) {
+      set({
+        streamAudioUrl: track.url,
+        selectedAudioTrackId: trackId
+      });
+      return;
+    }
+    const currentVideoId = get().currentVideo?.id || get().currentTrack?.id;
+    if (currentVideoId) {
+      set({ isBuffering: true });
+      try {
+        const res = await resolveStream({
+          videoId: currentVideoId,
+          quality: get().videoQuality,
+          mode: 'video',
+          audioTrackId: trackId
+        });
+        if (res.audioUrl) {
+          set({
+            streamAudioUrl: res.audioUrl,
+            selectedAudioTrackId: trackId,
+            audioTracks: res.audioTracks || get().audioTracks,
+            isBuffering: false
+          });
+        } else {
+          set({ isBuffering: false });
+        }
+      } catch {
+        set({ isBuffering: false });
+      }
+    }
+  },
+
+  toggleLoop: () => {
+    set((state) => ({ isLooping: !state.isLooping }));
+  },
+
+  toggleFitMode: () => {
+    set((state) => ({ fitMode: state.fitMode === 'fit' ? 'fill' : 'fit' }));
+  },
+
+  setSleepTimer: (minutes: number | null) => {
+    if (sleepTimerHandle) {
+      clearTimeout(sleepTimerHandle);
+      sleepTimerHandle = null;
+    }
+    if (minutes === null || minutes <= 0) {
+      set({ sleepTimerEndsAt: null, sleepTimerMinutes: null });
+      return;
+    }
+    const endsAt = Date.now() + minutes * 60 * 1000;
+    set({ sleepTimerEndsAt: endsAt, sleepTimerMinutes: minutes });
+    sleepTimerHandle = setTimeout(() => {
+      set({ isPlaying: false, sleepTimerEndsAt: null, sleepTimerMinutes: null });
+    }, minutes * 60 * 1000);
+  },
+
+  playVideo: async (video: VideoItem) => {
+    const token = ++activePlaybackToken;
+    set({
+      currentVideo: video,
+      playbackMode: 'video',
+      isPlaying: true,
+      isBuffering: true,
+      isVideoWatchOpen: true,
+      isMiniVideoPlayerOpen: false,
+      videoPlaybackError: null,
+      currentTime: 0,
+      duration: video.duration || 180,
+      isExpanded: false
+    });
+
+    try {
+      applyDynamicThemeFromImage(video.thumbnailUrl);
+    } catch {}
+
+    try {
+      const res = await resolveStream({
+        videoId: video.id,
+        quality: get().videoQuality,
+        mode: 'video'
+      });
+
+      if (token === activePlaybackToken) {
+        if (!res.videoUrl) {
+          set({
+            streamVideoUrl: null,
+            streamAudioUrl: res.audioUrl || null,
+            audioTracks: res.audioTracks || [],
+            selectedAudioTrackId: res.selectedAudioTrackId || null,
+            isBuffering: false,
+            videoPlaybackError: 'Direct video stream could not be loaded. Tap below to retry or switch to embedded player.'
+          });
+        } else {
+          set({
+            streamVideoUrl: res.videoUrl,
+            streamAudioUrl: res.audioUrl || res.videoUrl,
+            audioTracks: res.audioTracks || [],
+            selectedAudioTrackId: res.selectedAudioTrackId || null,
+            isBuffering: false,
+            videoPlaybackError: null
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[PlayerStore] Video stream resolution error:', err);
+      if (token === activePlaybackToken) {
+        set({
+          isBuffering: false,
+          videoPlaybackError: 'Stream resolution failed. Tap below to retry or switch to embedded player.'
+        });
+      }
+    }
+  },
+
+  setVideoWatchOpen: (open: boolean) => {
+    set({ isVideoWatchOpen: open });
+  },
+
+  setMiniVideoPlayerOpen: (open: boolean) => {
+    set({ isMiniVideoPlayerOpen: open });
+  },
+
+  minimizeVideo: () => {
+    set({ isVideoWatchOpen: false, isMiniVideoPlayerOpen: true });
+  },
+
+  closeVideo: () => {
+    set({
+      currentVideo: null,
+      streamVideoUrl: null,
+      isPlaying: false,
+      isVideoWatchOpen: false,
+      isMiniVideoPlayerOpen: false
+    });
+  },
+
+  listenAsMusic: async () => {
+    const video = get().currentVideo;
+    if (!video) return;
+
+    const track: TrackMetadata = {
+      id: video.id,
+      title: video.title,
+      artist: video.channelName,
+      artistId: video.channelId,
+      duration: video.duration,
+      thumbnailUrl: video.thumbnailUrl,
+      highResThumbnailUrl: video.thumbnailUrl
+    };
+
+    set({
+      isVideoWatchOpen: false,
+      isMiniVideoPlayerOpen: false,
+      playbackMode: 'music',
+      currentTrack: track,
+      isExpanded: true
+    });
+
+    await get().playTrack(track);
+  },
 
   loadLyricsForTrack: async (track: TrackMetadata, reqToken?: number) => {
     set({ isLyricsLoading: true });
@@ -437,15 +666,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setVideoQuality: (quality: VideoQuality) => {
     set({ videoQuality: quality });
-    const current = get().currentTrack;
-    if (current && get().playbackMode === 'video') {
+    const currentVideoId = get().currentVideo?.id || (get().playbackMode === 'video' ? get().currentTrack?.id : null);
+    if (currentVideoId) {
       resolveStream({
-        videoId: current.id,
+        videoId: currentVideoId,
         quality,
-        mode: 'video'
+        mode: 'video',
+        audioTrackId: get().selectedAudioTrackId || undefined
       }).then((res) => {
         if (res.videoUrl) {
-          set({ streamVideoUrl: res.videoUrl });
+          set({
+            streamVideoUrl: res.videoUrl,
+            streamAudioUrl: res.audioUrl || res.videoUrl,
+            audioTracks: res.audioTracks || get().audioTracks
+          });
         }
       });
     }

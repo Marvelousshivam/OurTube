@@ -18,8 +18,33 @@ import { useTasteStore } from '../../store/tasteStore';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { M3LoadingIndicator } from '../common/M3LoadingIndicator';
 import { KeyboardShortcutsModal } from '../settings/KeyboardShortcutsModal';
+import { ModeMorphButton } from './ModeMorphButton';
+import { NotificationBellButton } from './NotificationBellButton';
+import { NotificationsSheet } from './NotificationsSheet';
+import { VideoHomePage } from '../../pages/VideoHomePage';
+import { SubscriptionsPage } from '../../pages/SubscriptionsPage';
+import { VideoSearchPage } from '../../pages/VideoSearchPage';
+import { VideoWatchOverlay } from '../video/VideoWatchOverlay';
+import { MiniVideoPlayer } from '../video/MiniVideoPlayer';
+import { usePlayerStore } from '../../store/playerStore';
 
 export const AppLayout: React.FC = () => {
+  const { playVideo } = usePlayerStore();
+  const [videoMode, setVideoMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('koda_home_mode') === 'video';
+    }
+    return false;
+  });
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+
+  const handleToggleVideoMode = (mode: boolean) => {
+    setVideoMode(mode);
+    try {
+      localStorage.setItem('koda_home_mode', mode ? 'video' : 'music');
+    } catch {}
+  };
+
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
   useKeyboardShortcuts({ onOpenShortcuts: () => setIsShortcutsModalOpen(true) });
   const [bridgeState, setBridgeState] = useState<ExtensionConnectionState>(bridgeClient.getConnectionState());
@@ -27,7 +52,7 @@ export const AppLayout: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '') as NavTab;
-      if (['home', 'search', 'library', 'settings'].includes(hash)) return hash;
+      if (['home', 'search', 'subscriptions', 'library', 'settings'].includes(hash)) return hash;
     }
     return 'home';
   });
@@ -48,12 +73,24 @@ export const AppLayout: React.FC = () => {
   } | null>(null);
 
   const [isPaletteStudioOpen, setIsPaletteStudioOpen] = useState(false);
+  const { loadInitialData } = useTasteStore();
+  const [accountKey, setAccountKey] = useState<string>(() => {
+    return bridgeClient.getAuthState().selectedChannelId || 'default';
+  });
+
+  useEffect(() => {
+    const unsub = bridgeClient.onAccountChange((auth) => {
+      const channelId = auth.selectedChannelId || 'default';
+      setAccountKey(channelId);
+      loadInitialData(channelId);
+    });
+    return () => unsub();
+  }, [loadInitialData]);
   const [isDockHidden, setIsDockHidden] = useState(false);
 
   const mainScrollRef = useRef<HTMLElement>(null);
   const lastScrollTopRef = useRef(0);
   const accumulatedDeltaRef = useRef(0);
-  const { loadInitialData } = useTasteStore();
 
   useEffect(() => {
     const unsubState = bridgeClient.onStateChange((state) => {
@@ -82,7 +119,7 @@ export const AppLayout: React.FC = () => {
 
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '') as NavTab;
-      if (['home', 'search', 'library', 'settings'].includes(hash)) {
+      if (['home', 'search', 'subscriptions', 'library', 'settings'].includes(hash)) {
         setCurrentTab(hash);
         setViewingPlaylist(null);
         setViewingArtist(null);
@@ -227,7 +264,15 @@ export const AppLayout: React.FC = () => {
         >
           {/* Left: Either Root Time Greeting/Account Switcher OR Subview Back Navigation */}
           {!isSubView ? (
-            <AccountSwitcher variant="headerGreeting" onAccountChanged={() => {}} />
+            <AccountSwitcher
+              variant="headerGreeting"
+              onAccountChanged={() => {
+                const currentAuth = bridgeClient.getAuthState();
+                const channelId = currentAuth.selectedChannelId || `${Date.now()}`;
+                setAccountKey(channelId);
+                loadInitialData(channelId);
+              }}
+            />
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
               <button
@@ -313,30 +358,16 @@ export const AppLayout: React.FC = () => {
 
           {/* Right Header Actions: Minimal tactile buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {/* Theme / Palette Button */}
-            <button
-              onClick={() => setIsPaletteStudioOpen(true)}
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '50%',
-                backgroundColor: 'var(--md-sys-color-surface-container)',
-                border: '1px solid var(--md-sys-color-outline-variant)',
-                color: 'var(--md-sys-color-on-surface)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 150ms ease'
-              }}
-              title="Theme & Accent Palette"
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)')}
-            >
-              <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
-                palette
-              </span>
-            </button>
+            {/* Koda Mode Morph Button (Music ⟷ Video) */}
+            <ModeMorphButton
+              videoMode={videoMode}
+              onToggle={handleToggleVideoMode}
+            />
+
+            {/* Notification Bell Button (Matching Koda) */}
+            <NotificationBellButton
+              onClick={() => setIsNotificationsOpen(true)}
+            />
 
             {/* Settings Button: shown when not on settings */}
             {currentTab !== 'settings' && (
@@ -419,13 +450,49 @@ export const AppLayout: React.FC = () => {
           ) : (
             <>
               {currentTab === 'home' && (
-                <HomePage onOpenPlaylist={setViewingPlaylist} onOpenArtist={setViewingArtist} />
+                videoMode ? (
+                  <VideoHomePage
+                    key={`home_video_${accountKey}`}
+                    onPlayVideo={(video) => playVideo(video)}
+                    mode="home"
+                  />
+                ) : (
+                  <HomePage
+                    key={`home_music_${accountKey}`}
+                    onOpenPlaylist={setViewingPlaylist}
+                    onOpenArtist={setViewingArtist}
+                  />
+                )
+              )}
+              {currentTab === 'subscriptions' && (
+                <SubscriptionsPage
+                  key={`subs_${accountKey}`}
+                  onPlayVideo={(video) => playVideo(video)}
+                />
               )}
               {currentTab === 'search' && (
-                <SearchPage onOpenPlaylist={setViewingPlaylist} onOpenArtist={setViewingArtist} />
+                videoMode ? (
+                  <VideoSearchPage
+                    key={`search_video_${accountKey}`}
+                    onPlayVideo={(video) => playVideo(video)}
+                    onOpenPlaylist={setViewingPlaylist}
+                  />
+                ) : (
+                  <SearchPage
+                    key={`search_music_${accountKey}`}
+                    onOpenPlaylist={setViewingPlaylist}
+                    onOpenArtist={setViewingArtist}
+                  />
+                )
               )}
               {currentTab === 'library' && (
-                <LibraryPage onOpenPlaylist={setViewingPlaylist} onOpenArtist={setViewingArtist} />
+                <LibraryPage
+                  key={`library_${accountKey}_${videoMode ? 'video' : 'music'}`}
+                  videoMode={videoMode}
+                  onPlayVideo={(video) => playVideo(video)}
+                  onOpenPlaylist={setViewingPlaylist}
+                  onOpenArtist={setViewingArtist}
+                />
               )}
             </>
           )}
@@ -440,13 +507,36 @@ export const AppLayout: React.FC = () => {
         currentTab={currentTab}
         onSelectTab={handleSelectTab}
         isDockHidden={isDockHidden}
+        videoMode={videoMode}
       />
 
-      {/* Fullscreen Expanded Player */}
+      {/* Fullscreen Expanded Audio Player */}
       <ExpandedPlayer />
 
-      {/* Headless Native HTML5 Audio Media Element */}
-      <AudioMediaElement />
+      {/* Full Video Watch Overlay (No Iframe) */}
+      <VideoWatchOverlay />
+
+      {/* Floating Mini Video Player */}
+      <MiniVideoPlayer />
+
+      {/* Notifications Bottom Sheet (Matching Koda) */}
+      <NotificationsSheet
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        onSelectVideo={(v) => {
+          if (v.id && v.title) {
+            playVideo({
+              id: v.id,
+              title: v.title,
+              channelName: v.channelName || 'YouTube Creator',
+              thumbnailUrl: v.thumbnailUrl || '',
+              duration: 240,
+              durationFormatted: '4:00',
+              viewCount: 'Recommended'
+            });
+          }
+        }}
+      />
 
       {/* Palette Studio Modal */}
       {isPaletteStudioOpen && (
