@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useTasteStore } from '../store/tasteStore';
 import { usePlayerStore } from '../store/playerStore';
 import { bridgeClient } from '../api/bridgeClient';
-import { innertubeService, UserPlaylist } from '../api/innertubeService';
+import { innertubeService, UserPlaylist, isLikelyNonMusicVideo } from '../api/innertubeService';
 import { AuthState, TrackMetadata, VideoItem } from '../types';
 import { sizedArtwork, handleArtworkError } from '../api/artworkService';
 import { VideoLibraryView } from '../components/library/VideoLibraryView';
@@ -192,7 +192,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
 
     // Local History
     for (const h of history) {
-      if (!h.artist) continue;
+      if (!h.artist || isLikelyNonMusicVideo(h)) continue;
       const existing = artistMap.get(h.artist);
       if (existing) {
         existing.plays += h.playCount || 1;
@@ -232,7 +232,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
 
     // Prioritize YTM authentic history
     for (const track of ytmHistory) {
-      if (!seenIds.has(track.id)) {
+      if (!seenIds.has(track.id) && !isLikelyNonMusicVideo(track)) {
         seenIds.add(track.id);
         list.push(track);
       }
@@ -240,7 +240,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
 
     // Append local history
     for (const entry of history) {
-      if (!seenIds.has(entry.trackId)) {
+      if (!seenIds.has(entry.trackId) && !isLikelyNonMusicVideo(entry)) {
         seenIds.add(entry.trackId);
         list.push({
           id: entry.trackId,

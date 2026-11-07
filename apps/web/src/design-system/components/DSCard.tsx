@@ -8,7 +8,11 @@ export interface MediaCardProps {
   subtitle: string;
   imageUrl: string;
   isPlaylist?: boolean;
+  isPlaying?: boolean;
+  isLiked?: boolean;
   onPlay?: (e: React.MouseEvent) => void;
+  onToggleLike?: (e: React.MouseEvent) => void;
+  onQueue?: (e: React.MouseEvent) => void;
   onClick?: () => void;
   badge?: string;
   className?: string;
@@ -21,13 +25,18 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   subtitle,
   imageUrl,
   isPlaylist = false,
+  isPlaying = false,
+  isLiked = false,
   onPlay,
+  onToggleLike,
+  onQueue,
   onClick,
   badge,
   style,
   index
 }) => {
   const [isHovered, setIsHovered] = React.useState(false);
+  const [queuedFeedback, setQueuedFeedback] = React.useState(false);
   const highResUrl = React.useMemo(() => sizedArtwork(imageUrl, 300), [imageUrl]);
 
   return (
@@ -58,16 +67,17 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.97) translateY(-2px)')}
       onMouseUp={(e) => (e.currentTarget.style.transform = isHovered ? 'translateY(-4px)' : 'translateY(0)')}
     >
-      {/* Artwork Container */}
+      {/* Artwork Container with M3 Expressive Shape Morph */}
       <div
         style={{
           position: 'relative',
           width: '100%',
           aspectRatio: '1/1',
-          borderRadius: '16px',
+          borderRadius: isHovered || isPlaying ? '24px' : '16px',
           overflow: 'hidden',
           backgroundColor: 'var(--md-sys-color-surface-container-high, #282a2f)',
-          marginBottom: '12px'
+          marginBottom: '12px',
+          transition: 'border-radius 320ms cubic-bezier(0.34, 1.56, 0.64, 1)'
         }}
       >
         <img
@@ -77,13 +87,98 @@ export const MediaCard: React.FC<MediaCardProps> = ({
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            transform: isHovered ? 'scale(1.04)' : 'scale(1)',
+            transform: isHovered ? 'scale(1.05)' : 'scale(1)',
             transition: 'transform 400ms cubic-bezier(0.2, 0, 0, 1)'
           }}
           loading="lazy"
           referrerPolicy="no-referrer"
           onError={(e) => handleArtworkError(e, imageUrl)}
         />
+
+        {/* Top-Right Hover Quick Actions (Like & Queue) */}
+        {(onToggleLike || onQueue) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              opacity: isHovered || isLiked ? 1 : 0,
+              transform: isHovered || isLiked ? 'translateY(0)' : 'translateY(-4px)',
+              transition: 'opacity 180ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+              pointerEvents: isHovered || isLiked ? 'auto' : 'none',
+              zIndex: 3
+            }}
+          >
+            {onQueue && isHovered && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQueue(e);
+                  setQueuedFeedback(true);
+                  setTimeout(() => setQueuedFeedback(false), 1400);
+                }}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(17, 19, 24, 0.72)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  color: queuedFeedback ? 'var(--md-sys-color-primary)' : '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+                title="Add to queue"
+              >
+                <span className="material-symbols-rounded" style={{ fontSize: '17px' }}>
+                  {queuedFeedback ? 'check' : 'queue_music'}
+                </span>
+              </button>
+            )}
+
+            {onToggleLike && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleLike(e);
+                }}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(17, 19, 24, 0.72)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  color: isLiked ? 'var(--md-sys-color-primary)' : '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+                title={isLiked ? 'Remove from Liked Songs' : 'Save to Liked Songs'}
+              >
+                <span
+                  className={`material-symbols-rounded ${isLiked ? 'filled' : ''}`}
+                  style={{
+                    fontSize: '17px',
+                    animation: isLiked ? 'm3HeartBurst 380ms cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none'
+                  }}
+                >
+                  favorite
+                </span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Badge */}
         {badge && (
@@ -127,10 +222,10 @@ export const MediaCard: React.FC<MediaCardProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
-            opacity: isHovered ? 1 : 0,
-            transform: isHovered ? 'scale(1) translateY(0)' : 'scale(0.75) translateY(6px)',
+            opacity: isHovered || isPlaying ? 1 : 0,
+            transform: isHovered || isPlaying ? 'scale(1) translateY(0)' : 'scale(0.75) translateY(6px)',
             transition: 'opacity 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 150ms ease',
-            pointerEvents: isHovered ? 'auto' : 'none',
+            pointerEvents: isHovered || isPlaying ? 'auto' : 'none',
             zIndex: 3
           }}
           onMouseDown={(e) => {
@@ -143,7 +238,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
           title={isPlaylist ? 'Play Playlist' : 'Play Song'}
         >
           <span className="material-symbols-rounded filled" style={{ fontSize: '22px' }}>
-            {isPlaylist ? 'playlist_play' : 'play_arrow'}
+            {isPlaying ? 'graphic_eq' : isPlaylist ? 'playlist_play' : 'play_arrow'}
           </span>
         </button>
       </div>

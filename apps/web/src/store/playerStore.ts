@@ -248,19 +248,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       applyDynamicThemeFromImage(video.thumbnailUrl);
     } catch {}
 
-    // Record video play into local history
-    useTasteStore.getState().recordPlayback(
-      {
-        id: video.id,
-        title: video.title,
-        artist: video.channelName,
-        artistId: video.channelId,
-        duration: video.duration || 180,
-        thumbnailUrl: video.thumbnailUrl,
-        highResThumbnailUrl: video.thumbnailUrl
-      },
-      0.1
-    );
+    // Record video play into dedicated Video Mode history (never pollute Music Mode history)
+    useTasteStore.getState().recordVideoPlayback({
+      id: video.id,
+      title: video.title,
+      channelName: video.channelName,
+      channelId: video.channelId,
+      duration: video.duration || 180,
+      thumbnailUrl: video.thumbnailUrl,
+      viewCountText: video.viewCount
+    });
 
     try {
       const res = await resolveStream({

@@ -2,6 +2,7 @@ import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { create } from 'zustand';
 import { TrackMetadata, TasteEntry } from '../types';
 import { artistPhotoService } from '../api/artistPhotoService';
+import { isLikelyNonMusicVideo } from '../api/innertubeService';
 
 interface KodaDB extends DBSchema {
   history: {
@@ -100,6 +101,7 @@ interface TasteStoreState {
   followedArtists: FollowedArtistItem[];
   subscribedChannels: SubscribedChannelItem[];
   likedVideos: LikedVideoItem[];
+  videoHistory: LikedVideoItem[];
   isLoading: boolean;
   pickedArtists: string[];
   pickedGenres: string[];
@@ -107,6 +109,7 @@ interface TasteStoreState {
   isTasteSetupCompleted: boolean;
   loadInitialData: (accountId?: string) => Promise<void>;
   recordPlayback: (track: TrackMetadata, completionRate: number) => Promise<void>;
+  recordVideoPlayback: (video: Omit<LikedVideoItem, 'likedAt'>) => void;
   toggleLikeTrack: (track: TrackMetadata) => Promise<boolean>;
   isLiked: (trackId: string) => boolean;
   toggleSavePlaylist: (playlist: Omit<SavedPlaylistItem, 'savedAt'>) => boolean;
@@ -134,6 +137,7 @@ export const useTasteStore = create<TasteStoreState>((set, get) => ({
   followedArtists: JSON.parse(localStorage.getItem(`koda_followed_artists_${initialAccountId}`) || '[]'),
   subscribedChannels: JSON.parse(localStorage.getItem(`koda_subscribed_channels_${initialAccountId}`) || '[]'),
   likedVideos: JSON.parse(localStorage.getItem(`koda_liked_videos_${initialAccountId}`) || '[]'),
+  videoHistory: JSON.parse(localStorage.getItem(`koda_video_history_${initialAccountId}`) || '[]'),
   isLoading: true,
   pickedArtists: JSON.parse(localStorage.getItem(`koda_picked_artists_${initialAccountId}`) || '[]'),
   pickedGenres: JSON.parse(localStorage.getItem(`koda_picked_genres_${initialAccountId}`) || '[]'),
@@ -179,16 +183,40 @@ export const useTasteStore = create<TasteStoreState>((set, get) => ({
       set({ isLoading: true, activeAccountId: targetId });
       const db = await getDB(targetId);
       const liked = await db.getAll('likedTracks');
-      const hist = await db.getAllFromIndex('history', 'by-playedAt');
+      const rawHist = await db.getAllFromIndex('history', 'by-playedAt');
+      const localVideoHistory: LikedVideoItem[] = JSON.parse(
+        localStorage.getItem(`koda_video_history_${targetId}`) || '[]'
+      );
+      const videoIds = new Set(localVideoHistory.map((v) => v.id));
+
+      // Purge any non-music YouTube videos that previously leaked into the Music history store
+      const cleanHist: TasteEntry[] = [];
+      for (const entry of rawHist) {
+        if (
+          videoIds.has(entry.trackId) ||
+          isLikelyNonMusicVideo({
+            title: entry.title,
+            artist: entry.artist,
+            album: entry.album,
+            duration: entry.duration,
+            thumbnailUrl: entry.thumbnailUrl
+          })
+        ) {
+          await db.delete('history', entry.trackId).catch(() => {});
+        } else {
+          cleanHist.push(entry);
+        }
+      }
 
       set({
         activeAccountId: targetId,
         likedTracks: liked,
-        history: hist.reverse(),
+        history: cleanHist.reverse(),
         savedPlaylists: JSON.parse(localStorage.getItem(`koda_saved_playlists_${targetId}`) || '[]'),
         followedArtists: JSON.parse(localStorage.getItem(`koda_followed_artists_${targetId}`) || '[]'),
         subscribedChannels: JSON.parse(localStorage.getItem(`koda_subscribed_channels_${targetId}`) || '[]'),
         likedVideos: JSON.parse(localStorage.getItem(`koda_liked_videos_${targetId}`) || '[]'),
+        videoHistory: localVideoHistory,
         pickedArtists: JSON.parse(localStorage.getItem(`koda_picked_artists_${targetId}`) || '[]'),
         pickedGenres: JSON.parse(localStorage.getItem(`koda_picked_genres_${targetId}`) || '[]'),
         deckVerdicts: JSON.parse(localStorage.getItem(`koda_deck_verdicts_${targetId}`) || '{}'),
@@ -206,6 +234,11 @@ export const useTasteStore = create<TasteStoreState>((set, get) => ({
       const saveHistorySetting = localStorage.getItem('koda_save_history');
       const isIncognito = (window as any).__koda_incognito_session === true;
       if (saveHistorySetting === 'false' || isIncognito) {
+        return;
+      }
+
+      // Never record non-music YouTube videos into Music Mode history
+      if (isLikelyNonMusicVideo(track)) {
         return;
       }
 
@@ -232,6 +265,26 @@ export const useTasteStore = create<TasteStoreState>((set, get) => ({
       set({ history: hist.reverse() });
     } catch (err) {
       console.warn('[Koda TasteStore] Error saving history:', err);
+    }
+  },
+
+  recordVideoPlayback: (video: Omit<LikedVideoItem, 'likedAt'>) => {
+    try {
+      const saveHistorySetting = localStorage.getItem('koda_save_history');
+      const isIncognito = (window as any).__koda_incognito_session === true;
+      if (saveHistorySetting === 'false' || isIncognito) {
+        return;
+      }
+      const safeId = get().activeAccountId;
+      const current = get().videoHistory;
+      const next: LikedVideoItem[] = [
+        { ...video, likedAt: Date.now() },
+        ...current.filter((v) => v.id !== video.id)
+      ].slice(0, 60);
+      localStorage.setItem(`koda_video_history_${safeId}`, JSON.stringify(next));
+      set({ videoHistory: next });
+    } catch (err) {
+      console.warn('[Koda TasteStore] Error saving video history:', err);
     }
   },
 

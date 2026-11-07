@@ -430,13 +430,13 @@ export const DialPlayer: React.FC<DialPlayerProps> = ({
             </span>
           </button>
 
-          {/* Center Play / Pause Button (Filled Circle with Elevation) */}
+          {/* Center Play / Pause Button (Morphing Circle <-> Squircle) */}
           <button
             onClick={onTogglePlay}
             style={{
-              width: '54px',
-              height: '54px',
-              borderRadius: '50%',
+              width: '58px',
+              height: '58px',
+              borderRadius: isPlaying ? '18px' : '50%',
               backgroundColor: 'var(--md-sys-color-primary)',
               color: 'var(--md-sys-color-on-primary)',
               border: 'none',
@@ -444,8 +444,8 @@ export const DialPlayer: React.FC<DialPlayerProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
-              transition: 'transform 100ms ease'
+              boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
+              transition: 'border-radius 340ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 120ms ease'
             }}
             onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
             onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}

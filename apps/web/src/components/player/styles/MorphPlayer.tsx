@@ -11,6 +11,7 @@ interface MorphPlayerProps {
   isLiked: boolean;
   repeatMode?: RepeatMode;
   isShuffled?: boolean;
+  currentLyricLine?: string | null;
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onNext: () => void;
@@ -30,6 +31,7 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
   isLiked,
   repeatMode = 'off',
   isShuffled = false,
+  currentLyricLine = null,
   onTogglePlay,
   onSeek,
   onNext,
@@ -89,7 +91,7 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
         }}
       >
         {/* Track Title & Artist */}
-        <div>
+        <div key={track.id} style={{ animation: 'm3TextSlideUp 280ms cubic-bezier(0.16, 1, 0.3, 1)' }}>
           <h2
             style={{
               fontSize: 'clamp(20px, 2.6vh, 26px)',
@@ -106,8 +108,9 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
           <p
             style={{
               fontSize: '14px',
-              fontWeight: 500,
-              color: 'var(--md-sys-color-outline)',
+              fontWeight: 600,
+              color: 'var(--md-sys-color-primary)',
+              opacity: 0.9,
               margin: 0,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -116,6 +119,45 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
           >
             {track.artist}
           </p>
+
+          {currentLyricLine && (
+            <button
+              onClick={onOpenLyrics}
+              style={{
+                marginTop: '8px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                maxWidth: '90%',
+                padding: '5px 12px',
+                borderRadius: '9999px',
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
+                color: 'var(--md-sys-color-on-surface)',
+                fontSize: '12px',
+                fontStyle: 'italic',
+                cursor: 'pointer'
+              }}
+            >
+              <span
+                className="material-symbols-rounded"
+                style={{ fontSize: '14px', color: 'var(--md-sys-color-primary)' }}
+              >
+                lyrics
+              </span>
+              <span
+                key={currentLyricLine}
+                style={{
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  animation: 'm3TextSlideUp 220ms ease'
+                }}
+              >
+                “{currentLyricLine}”
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Waveform Scrubber & Timestamps (Matching Photo 3) */}
@@ -267,13 +309,13 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
             </span>
           </button>
 
-          {/* Center Play/Pause Button */}
+          {/* Center Play/Pause Button (Morphing Circle <-> Squircle) */}
           <button
             onClick={onTogglePlay}
             style={{
-              width: '54px',
-              height: '54px',
-              borderRadius: '50%',
+              width: '58px',
+              height: '58px',
+              borderRadius: isPlaying ? '18px' : '50%',
               backgroundColor: 'var(--md-sys-color-primary)',
               color: 'var(--md-sys-color-on-primary)',
               border: 'none',
@@ -281,8 +323,8 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
-              transition: 'transform 100ms ease'
+              boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
+              transition: 'border-radius 340ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 120ms ease'
             }}
             onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
             onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}

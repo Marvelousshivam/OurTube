@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TrackMetadata, RepeatMode } from '../../../types';
 import { sizedArtwork, handleArtworkError } from '../../../api/artworkService';
 import { SonicWaveformScrubber } from '../SonicWaveformScrubber';
@@ -14,6 +14,7 @@ interface HeroPlayerProps {
   stageMode?: boolean;
   isWideScreen?: boolean;
   showLyrics?: boolean;
+  currentLyricLine?: string | null;
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onNext: () => void;
@@ -37,6 +38,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
   stageMode = false,
   isWideScreen,
   showLyrics = false,
+  currentLyricLine = null,
   onTogglePlay,
   onSeek,
   onNext,
@@ -47,7 +49,15 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
   onToggleLyrics,
   onOpenQueue
 }) => {
+  const [tilt, setTilt] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const isFullWidescreenSpread = (isWideScreen ?? true) && !stageMode;
+
+  const handleArtworkMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+    const ny = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+    setTilt({ x: -ny * 6, y: nx * 6 });
+  };
 
   const ControlsDeck = (
     <div
@@ -61,11 +71,13 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
     >
       {/* 1. Track Title & Artist Metadata + Circular Like Toggle */}
       <div
+        key={track.id}
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '16px'
+          gap: '16px',
+          animation: 'm3TextSlideUp 280ms cubic-bezier(0.16, 1, 0.3, 1)'
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -87,8 +99,9 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
           <span
             style={{
               fontSize: '14px',
-              fontWeight: 500,
-              color: 'var(--md-sys-color-outline)',
+              fontWeight: 600,
+              color: 'var(--md-sys-color-primary)',
+              opacity: 0.9,
               marginTop: '4px',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -102,18 +115,18 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
         <button
           onClick={onToggleLike}
           style={{
-            background: isLiked ? 'rgba(255, 64, 129, 0.16)' : 'transparent',
+            background: isLiked ? 'rgba(255, 64, 129, 0.18)' : 'transparent',
             border: '1.5px solid rgba(255, 255, 255, 0.22)',
             color: isLiked ? '#ff4081' : 'var(--md-sys-color-on-surface)',
             cursor: 'pointer',
             width: '46px',
             height: '46px',
-            borderRadius: '50%',
+            borderRadius: isLiked ? '16px' : '50%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            transition: 'all 200ms ease'
+            transition: 'all 240ms cubic-bezier(0.34, 1.56, 0.64, 1)'
           }}
           title={isLiked ? 'Remove from liked' : 'Like track'}
         >
@@ -129,6 +142,46 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
         </button>
       </div>
 
+      {/* Live Synced Lyric Peek */}
+      {currentLyricLine && !showLyrics && (
+        <button
+          onClick={onToggleLyrics}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '7px 14px',
+            borderRadius: '14px',
+            backgroundColor: 'rgba(255, 255, 255, 0.06)',
+            border: '1px solid var(--md-sys-color-outline-variant)',
+            color: 'var(--md-sys-color-on-surface)',
+            fontSize: '12px',
+            fontWeight: 600,
+            fontStyle: 'italic',
+            cursor: 'pointer',
+            textAlign: 'left'
+          }}
+        >
+          <span
+            className="material-symbols-rounded"
+            style={{ fontSize: '15px', color: 'var(--md-sys-color-primary)', flexShrink: 0 }}
+          >
+            lyrics
+          </span>
+          <span
+            key={currentLyricLine}
+            style={{
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              animation: 'm3TextSlideUp 240ms ease'
+            }}
+          >
+            “{currentLyricLine}”
+          </span>
+        </button>
+      )}
+
       {/* 2. Sonic Acoustic Waveform Scrubber with Micro Timestamps */}
       <SonicWaveformScrubber
         currentTime={currentTime}
@@ -139,23 +192,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
         accentColor="var(--md-sys-color-primary)"
       />
 
-      {/* 3. Subtle Organic Topographical Ridge (Matching Koda Screenshot) */}
-      <div style={{ width: '100%', height: '20px', opacity: 0.55, margin: '-4px 0 2px 0' }}>
-        <svg viewBox="0 0 100 20" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
-          <path
-            d="M 0 14 Q 25 6, 45 12 T 85 8 T 100 14 L 100 20 L 0 20 Z"
-            fill="rgba(255, 255, 255, 0.08)"
-          />
-          <path
-            d="M 0 14 Q 25 6, 45 12 T 85 8 T 100 14"
-            fill="none"
-            stroke="rgba(255, 255, 255, 0.25)"
-            strokeWidth="1.2"
-          />
-        </svg>
-      </div>
-
-      {/* 4. Signature Asymmetric Hero Transport Deck (Exact Koda Layout) */}
+      {/* 3. Signature Asymmetric Hero Transport Deck */}
       <div
         style={{
           display: 'grid',
@@ -170,7 +207,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
           style={{
             height: '100%',
             minHeight: isFullWidescreenSpread ? '142px' : '124px',
-            borderRadius: '34px',
+            borderRadius: isPlaying ? '28px' : '48px',
             backgroundColor: 'var(--md-sys-color-primary)',
             color: 'var(--md-sys-color-on-primary)',
             border: 'none',
@@ -179,7 +216,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: '0 8px 28px -4px rgba(0, 0, 0, 0.45)',
-            transition: 'transform 120ms ease'
+            transition: 'border-radius 360ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 120ms ease'
           }}
           title={isPlaying ? 'Pause' : 'Play'}
           onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.96)')}
@@ -211,10 +248,10 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                transition: 'transform 100ms ease'
+                transition: 'transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
               title="Previous"
-              onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
+              onMouseDown={(e) => (e.currentTarget.style.transform = 'translateX(-3px) scale(0.92)')}
               onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
             >
               <span className="material-symbols-rounded" style={{ fontSize: '28px' }}>
@@ -236,10 +273,10 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                transition: 'transform 100ms ease'
+                transition: 'transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
               title="Next"
-              onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.92)')}
+              onMouseDown={(e) => (e.currentTarget.style.transform = 'translateX(3px) scale(0.92)')}
               onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
             >
               <span className="material-symbols-rounded" style={{ fontSize: '28px' }}>
@@ -255,7 +292,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
               style={{
                 flex: 1,
                 height: '42px',
-                borderRadius: '16px',
+                borderRadius: isShuffled ? '12px' : '21px',
                 backgroundColor: isShuffled ? 'var(--md-sys-color-primary)' : 'rgba(255, 255, 255, 0.08)',
                 color: isShuffled ? 'var(--md-sys-color-on-primary)' : 'var(--md-sys-color-on-surface)',
                 border: 'none',
@@ -263,7 +300,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                transition: 'all 150ms ease'
+                transition: 'all 220ms cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
               title="Shuffle"
             >
@@ -277,7 +314,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
               style={{
                 flex: 1,
                 height: '42px',
-                borderRadius: '16px',
+                borderRadius: repeatMode !== 'off' ? '12px' : '21px',
                 backgroundColor: repeatMode !== 'off' ? 'var(--md-sys-color-primary)' : 'rgba(255, 255, 255, 0.08)',
                 color: repeatMode !== 'off' ? 'var(--md-sys-color-on-primary)' : 'var(--md-sys-color-on-surface)',
                 border: 'none',
@@ -285,7 +322,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                transition: 'all 150ms ease'
+                transition: 'all 220ms cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
               title={`Repeat: ${repeatMode}`}
             >
@@ -299,7 +336,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
               style={{
                 flex: 1,
                 height: '42px',
-                borderRadius: '16px',
+                borderRadius: showLyrics ? '12px' : '21px',
                 backgroundColor: showLyrics ? 'var(--md-sys-color-primary)' : 'rgba(255, 255, 255, 0.08)',
                 color: showLyrics ? 'var(--md-sys-color-on-primary)' : 'var(--md-sys-color-on-surface)',
                 border: 'none',
@@ -307,7 +344,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                transition: 'all 150ms ease'
+                transition: 'all 220ms cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
               title={showLyrics ? 'Hide lyrics' : 'Show lyrics'}
             >
@@ -321,7 +358,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
               style={{
                 flex: 1,
                 height: '42px',
-                borderRadius: '16px',
+                borderRadius: '21px',
                 backgroundColor: 'rgba(255, 255, 255, 0.08)',
                 color: 'var(--md-sys-color-on-surface)',
                 border: 'none',
@@ -373,18 +410,25 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
             margin: '0 auto'
           }}
         >
-          {/* Left Column: Full-Bleed Artwork Card */}
+          {/* Left Column: Full-Bleed Artwork Card with 3D Tilt */}
           <div
+            onMouseMove={handleArtworkMove}
+            onMouseLeave={() => setTilt({ x: 0, y: 0 })}
             style={{
               position: 'relative',
               width: '100%',
               maxWidth: 'min(460px, 52vh)',
               aspectRatio: '1 / 1',
-              borderRadius: '28px',
+              borderRadius: isPlaying ? '28px' : '40px',
               overflow: 'hidden',
               backgroundColor: 'rgba(255, 255, 255, 0.05)',
               boxShadow: '0 32px 80px -16px rgba(0, 0, 0, 0.75)',
-              margin: '0 auto'
+              margin: '0 auto',
+              transform: `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
+              transition:
+                tilt.x === 0 && tilt.y === 0
+                  ? 'transform 450ms cubic-bezier(0.2, 0.9, 0.3, 1), border-radius 500ms ease'
+                  : 'transform 80ms linear, border-radius 500ms ease'
             }}
           >
             <img
@@ -406,7 +450,7 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
           {ControlsDeck}
         </div>
       ) : (
-        /* ================= COMPACT / STAGE MODE VERTICAL LAYOUT (Matching Koda Screenshot) ================= */
+        /* ================= COMPACT / STAGE MODE VERTICAL LAYOUT ================= */
         <div
           style={{
             display: 'flex',
@@ -418,7 +462,6 @@ export const HeroPlayer: React.FC<HeroPlayerProps> = ({
             margin: '0 auto'
           }}
         >
-          {/* Top Artwork with Subtle Gradient Mask */}
           <div
             style={{
               width: '100%',

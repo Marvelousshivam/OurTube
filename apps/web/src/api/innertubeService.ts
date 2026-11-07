@@ -23,6 +23,70 @@ export interface HomeSection {
   items: TrackMetadata[];
 }
 
+const NON_MUSIC_PATTERNS =
+  /\b(podcast|episode|ep\.\s*\d+|standup|stand-up|dark comedy|comedy|sketch|roast|trailer|teaser|movie review|film review|explained|reaction|gameplay|walkthrough|playthrough|tutorial|lecture|crash course|breaking news|markets?\s+cheer|stock\s+market|ai\s+bubble|trillion|billion\s+wip|crypto|bitcoin|election|minister|parliament|geopolitics|debate|vlog|unboxing|benchmark|highlights|cricket|ipl|test match|deshbhakt|dhruv rathee|nitish rajput|mohak mangal|abhi and niyu|sofa king|tanmay bhat|samay raina|beerbiceps|ranveer allahbadia|think school|aevy tv|neon man|neuzboy)\b/i;
+
+const MUSIC_SIGNAL_PATTERNS =
+  /\b(song|music|audio|lyrics?|cover|ost|unplugged|acoustic|lofi|lo-fi|remix|mashup|medley|feat\.?|ft\.?|prod\.?|sufi|ghazal|qawwali|bhajan|raag|instrumental|chords?|session|studio|records?|soundtrack|melody|orchestra|symphony|single|album|official video)\b/i;
+
+/**
+ * Determines whether a candidate track/history item is actually a regular non-music YouTube video
+ * (e.g., news, politics, comedy sketch, podcast, tech review) that leaked from shared Google Watch History
+ * or Video Mode.
+ */
+export function isLikelyNonMusicVideo(item: {
+  title?: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+  thumbnailUrl?: string;
+  musicVideoType?: string;
+  rawSubtitle?: string;
+}): boolean {
+  const title = (item.title || '').trim();
+  const artist = (item.artist || '').trim();
+  const album = (item.album || '').trim();
+  const rawSub = (item.rawSubtitle || '').trim();
+  const combined = `${title} ${artist} ${rawSub}`;
+
+  // 1. Explicit InnerTube Podcast Episode type
+  if (item.musicVideoType === 'MUSIC_VIDEO_TYPE_PODCAST_EPISODE') {
+    return true;
+  }
+
+  // 2. Explicit non-music keywords (news, politics, dark comedy, standup, tech, etc.)
+  if (NON_MUSIC_PATTERNS.test(combined)) {
+    return true;
+  }
+
+  // 3. Finance / news headline patterns (e.g. "$3 Trillion Wiped", "Markets Cheer")
+  if (/\$[0-9]+(\.[0-9]+)?\s*(million|billion|trillion)/i.test(title)) {
+    return true;
+  }
+
+  // 4. Long-form videos (> 16 minutes) unless explicitly a music mix/jukebox
+  if (
+    item.duration &&
+    item.duration > 960 &&
+    !/\b(jukebox|mix|nonstop|non-stop|lofi|lo-fi|mashup|full album|medley|bhajan|qawwali)\b/i.test(combined)
+  ) {
+    return true;
+  }
+
+  // 5. InnerTube UGC video from shared YouTube watch history without album or music signals
+  if (item.musicVideoType === 'MUSIC_VIDEO_TYPE_UGC') {
+    const hasSquareMusicCover =
+      (item.thumbnailUrl || '').includes('googleusercontent.com') ||
+      (item.thumbnailUrl || '').includes('music.youtube.com');
+    const hasMusicSignal = MUSIC_SIGNAL_PATTERNS.test(combined) || Boolean(album);
+    if (!hasSquareMusicCover && !hasMusicSignal) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export interface UserPlaylist {
   id: string;
   title: string;
@@ -2718,34 +2782,56 @@ export class InnertubeService {
 
       const addRenderer = (r: any) => {
         if (!r) return;
-        const videoId =
-          r.playlistItemData?.videoId ||
-          r.navigationEndpoint?.watchEndpoint?.videoId ||
-          r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
-          r.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
+        const watchEndpoint =
+          r.navigationEndpoint?.watchEndpoint ||
+          r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint ||
+          r.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint ||
+          r.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint;
+
+        const videoId = r.playlistItemData?.videoId || watchEndpoint?.videoId;
 
         if (!videoId || seenIds.has(videoId)) return;
-        seenIds.add(videoId);
+
+        const musicVideoType: string | undefined =
+          watchEndpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType;
 
         const title =
           r.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((x: any) => x.text).join('') || '';
         const rawArtist =
           r.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((x: any) => x.text).join('') || '';
+        const rawAlbum =
+          r.flexColumns?.[2]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.map((x: any) => x.text).join('') || '';
         const artist = this.cleanArtistSubtitle(rawArtist) || 'YouTube Music';
         const thumb =
           r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
           `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-        if (title) {
-          tracks.push({
-            id: videoId,
-            title: title.trim(),
+        if (!title) return;
+
+        // Filter out regular non-music YouTube videos that leak into FEmusic_history from www.youtube.com
+        if (
+          isLikelyNonMusicVideo({
+            title,
             artist,
-            duration: 210,
+            album: rawAlbum || undefined,
             thumbnailUrl: thumb,
-            highResThumbnailUrl: sizedArtwork(thumb, 600)
-          });
+            musicVideoType,
+            rawSubtitle: rawArtist
+          })
+        ) {
+          return;
         }
+
+        seenIds.add(videoId);
+        tracks.push({
+          id: videoId,
+          title: title.trim(),
+          artist,
+          album: rawAlbum ? rawAlbum.trim() : undefined,
+          duration: 210,
+          thumbnailUrl: thumb,
+          highResThumbnailUrl: sizedArtwork(thumb, 544)
+        });
       };
 
       const scan = (node: any) => {
@@ -2989,11 +3075,18 @@ export class InnertubeService {
             renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.slice(-1)[0]?.url ||
             '';
 
-          // VideoId extraction
+          // VideoId & musicVideoType extraction
+          const watchEndpoint =
+            renderer.navigationEndpoint?.watchEndpoint ||
+            renderer.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint ||
+            renderer.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint ||
+            renderer.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.watchEndpoint;
+
+          const musicVideoType: string | undefined =
+            watchEndpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType;
+
           let videoId =
-            renderer.navigationEndpoint?.watchEndpoint?.videoId ||
-            renderer.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId ||
-            renderer.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId ||
+            watchEndpoint?.videoId ||
             renderer.playlistItemData?.videoId ||
             thumbnail?.match(/vi\/([a-zA-Z0-9_-]{11})/)?.[1];
 
@@ -3008,6 +3101,19 @@ export class InnertubeService {
           }
 
           if (!videoId) continue;
+
+          // Skip non-music YouTube videos or podcast episodes on the Music Home feed
+          if (
+            !videoId.startsWith('playlist_') &&
+            isLikelyNonMusicVideo({
+              title: titleText,
+              artist: artistText,
+              thumbnailUrl: thumbnail,
+              musicVideoType
+            })
+          ) {
+            continue;
+          }
 
           const finalThumb =
             thumbnail ||

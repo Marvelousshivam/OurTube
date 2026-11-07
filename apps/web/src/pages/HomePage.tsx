@@ -1,18 +1,16 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { innertubeService, HomeSection, UserPlaylist } from '../api/innertubeService';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { innertubeService, HomeSection, UserPlaylist, isLikelyNonMusicVideo } from '../api/innertubeService';
 import { usePlayerStore } from '../store/playerStore';
 import { useTasteStore } from '../store/tasteStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { bridgeClient } from '../api/bridgeClient';
-import { TrackMetadata, AuthState } from '../types';
+import { TrackMetadata } from '../types';
 import { artistPhotoService } from '../api/artistPhotoService';
 import { sizedArtwork, handleArtworkError } from '../api/artworkService';
 import { YourMixHero } from '../components/home/YourMixHero';
 import {
-  COLOR_TOKENS,
   SHAPES,
   MediaCard,
-  DSAvatar,
   M3LoadingIndicator
 } from '../design-system';
 
@@ -21,19 +19,106 @@ export interface HomePageProps {
   onOpenArtist?: (artist: { id?: string; name: string; imageUrl?: string }) => void;
 }
 
+const ScrollNavButtons: React.FC<{
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  extraAction?: React.ReactNode;
+}> = ({ scrollRef, extraAction }) => {
+  const scrollByAmount = (dir: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const offset = Math.max(300, Math.round(el.clientWidth * 0.72));
+    el.scrollBy({ left: dir === 'left' ? -offset : offset, behavior: 'smooth' });
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {extraAction}
+      <button
+        type="button"
+        onClick={() => scrollByAmount('left')}
+        style={{
+          width: '36px',
+          height: '36px',
+          borderRadius: '50%',
+          backgroundColor: 'var(--md-sys-color-surface-container)',
+          color: 'var(--md-sys-color-on-surface)',
+          border: '1px solid var(--md-sys-color-outline-variant)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          transition: 'transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 150ms ease'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
+          e.currentTarget.style.transform = 'scale(1.06)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)';
+          e.currentTarget.style.transform = 'scale(1)';
+        }}
+        title="Scroll left"
+      >
+        <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+          chevron_left
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => scrollByAmount('right')}
+        style={{
+          width: '36px',
+          height: '36px',
+          borderRadius: '50%',
+          backgroundColor: 'var(--md-sys-color-surface-container)',
+          color: 'var(--md-sys-color-on-surface)',
+          border: '1px solid var(--md-sys-color-outline-variant)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          transition: 'transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 150ms ease'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)';
+          e.currentTarget.style.transform = 'scale(1.06)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)';
+          e.currentTarget.style.transform = 'scale(1)';
+        }}
+        title="Scroll right"
+      >
+        <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+          chevron_right
+        </span>
+      </button>
+    </div>
+  );
+};
+
 export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist }) => {
   const [sections, setSections] = useState<HomeSection[]>([]);
   const [userPlaylists, setUserPlaylists] = useState<UserPlaylist[]>([]);
   const [loadingPlaylists, setLoadingPlaylists] = useState(true);
   const [remoteHistory, setRemoteHistory] = useState<TrackMetadata[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hoveredQuickId, setHoveredQuickId] = useState<string | null>(null);
+  const [hoveredRecentId, setHoveredRecentId] = useState<string | null>(null);
+  const [hoveredAlbumId, setHoveredAlbumId] = useState<string | null>(null);
+  const [hoveredArtistIdx, setHoveredArtistIdx] = useState<number | null>(null);
+
   const [isWideScreen, setIsWideScreen] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
   );
   const [, setPhotoVersion] = useState(0);
 
-  const { playTrack, currentTrack, isPlaying } = usePlayerStore();
-  const { history, likedTracks, isLiked, toggleLikeTrack } = useTasteStore();
+  const recentRailRef = useRef<HTMLDivElement>(null);
+  const albumsRailRef = useRef<HTMLDivElement>(null);
+  const artistsRailRef = useRef<HTMLDivElement>(null);
+
+  const { playTrack, currentTrack, isPlaying, togglePlay, addToQueue } = usePlayerStore();
+  const { history, likedTracks, isLiked, toggleLikeTrack, savedPlaylists } = useTasteStore();
   const { homeLayoutMode, filterExplicit } = useSettingsStore();
 
   const rawSections = sections;
@@ -115,6 +200,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
   const topArtists = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const h of history) {
+      if (isLikelyNonMusicVideo(h)) continue;
       if (h.artist) {
         counts[h.artist] = (counts[h.artist] || 0) + (h.playCount || 1);
       }
@@ -152,11 +238,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
     const personalTracks: TrackMetadata[] = [];
     const seenIds = new Set<string>();
 
-    // 1. YouTube Music authentic server-personalized mix / shelf (Mixed for you, My Supermix, Listen again, Quick picks)
-    const supermixShelf = sections.find((s) =>
+    // 1. YouTube Music authentic server-personalized mix / shelf
+    const supermixShelf = filteredSections.find((s) =>
       /mixed for you|my supermix|your mix/i.test(s.title)
     );
-    const listenAgainShelf = sections.find((s) =>
+    const listenAgainShelf = filteredSections.find((s) =>
       /listen again|quick picks|favorites|similar to|from your/i.test(s.title)
     );
     const personalizedShelf = supermixShelf || listenAgainShelf;
@@ -182,7 +268,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
       if (!seenIds.has(h.trackId)) {
         seenIds.add(h.trackId);
         const found =
-          sections.flatMap((s) => s.items).find((i) => i.id === h.trackId) ||
+          filteredSections.flatMap((s) => s.items).find((i) => i.id === h.trackId) ||
           likedTracks.find((l) => l.id === h.trackId);
         if (found) {
           personalTracks.push(found);
@@ -190,27 +276,25 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
       }
     }
 
-    // If we have at least 3 tracks from authentic shelves or account listening, return them!
     if (personalTracks.length >= 3) {
       return { mixTracks: personalTracks.slice(0, 12), isPersonalMix: true };
     }
 
-    // Fallback if fresh account with no history or personalized shelf yet
-    if (sections.length > 0) {
-      return { mixTracks: sections[0].items.slice(0, 12), isPersonalMix: false };
+    if (filteredSections.length > 0) {
+      return { mixTracks: filteredSections[0].items.slice(0, 12), isPersonalMix: false };
     }
 
     return { mixTracks: [], isPersonalMix: false };
-  }, [likedTracks, history, sections]);
+  }, [likedTracks, history, filteredSections]);
 
   // Derive authentic Recently Played songs (merging local playback history with remote YouTube history)
   const recentlyPlayed = useMemo(() => {
     const list: TrackMetadata[] = [];
     const seenIds = new Set<string>();
 
-    // 1. Local playback history (newest first)
+    // 1. Local playback history (newest first, strictly music tracks)
     for (const h of history) {
-      if (!h.trackId || seenIds.has(h.trackId)) continue;
+      if (!h.trackId || seenIds.has(h.trackId) || isLikelyNonMusicVideo(h)) continue;
       seenIds.add(h.trackId);
       const thumb =
         h.thumbnailUrl || `https://i.ytimg.com/vi/${h.trackId}/hqdefault.jpg`;
@@ -221,13 +305,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
         album: h.album,
         duration: h.duration || 210,
         thumbnailUrl: thumb,
-        highResThumbnailUrl: sizedArtwork(thumb, 600)
+        highResThumbnailUrl: sizedArtwork(thumb, 544)
       });
     }
 
-    // 2. YouTube Music remote listening history
+    // 2. YouTube Music remote listening history (strictly music tracks)
     for (const r of remoteHistory) {
-      if (!r.id || seenIds.has(r.id)) continue;
+      if (!r.id || seenIds.has(r.id) || isLikelyNonMusicVideo(r)) continue;
       seenIds.add(r.id);
       list.push(r);
     }
@@ -235,14 +319,77 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
     return list.slice(0, 24);
   }, [history, remoteHistory]);
 
-  // Extract recent albums / collections from shelves (only if at least 3)
-  const recentAlbums = useMemo(() => {
-    for (const s of filteredSections) {
-      if (/album|release|record|collection/i.test(s.title)) {
-        return s.items.length >= 3 ? s.items.slice(0, 10) : [];
+  // Derive 6-Tile Quick Dial Bento Grid items (combining recent favorites, liked tracks & top recommendations)
+  const quickDialItems = useMemo(() => {
+    const items: TrackMetadata[] = [];
+    const seen = new Set<string>();
+
+    for (const r of recentlyPlayed) {
+      if (!seen.has(r.id)) {
+        seen.add(r.id);
+        items.push(r);
+        if (items.length >= 3) break;
       }
     }
-    return filteredSections.length > 1 && filteredSections[1].items.length >= 3 ? filteredSections[1].items.slice(0, 10) : [];
+
+    for (const l of likedTracks) {
+      if (!seen.has(l.id)) {
+        seen.add(l.id);
+        items.push(l);
+        if (items.length >= 6) break;
+      }
+    }
+
+    for (const m of mixTracks) {
+      if (items.length >= 6) break;
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        items.push(m);
+      }
+    }
+
+    return items.slice(0, 6);
+  }, [recentlyPlayed, likedTracks, mixTracks]);
+
+  // Merge userPlaylists + savedPlaylists from tasteStore
+  const combinedPlaylists = useMemo(() => {
+    const seen = new Set(userPlaylists.map((p) => p.id.replace(/^playlist_/, '')));
+    const merged: UserPlaylist[] = [...userPlaylists];
+    for (const sp of savedPlaylists) {
+      const cleanId = sp.id.replace(/^playlist_/, '');
+      if (!seen.has(cleanId)) {
+        seen.add(cleanId);
+        merged.unshift({
+          id: sp.id,
+          title: sp.title,
+          subtitle: sp.subtitle || 'Saved Playlist',
+          imageUrl: sp.thumbnailUrl || '',
+          author: sp.subtitle || 'Saved',
+          trackCount: sp.trackCount
+        });
+      }
+    }
+    return merged;
+  }, [userPlaylists, savedPlaylists]);
+
+  // Extract recent albums / collections from shelves (only authentic album/collection shelves or square-artwork items)
+  const recentAlbums = useMemo(() => {
+    for (const s of filteredSections) {
+      if (/album|release|record|collection|single/i.test(s.title)) {
+        const musicOnly = s.items.filter((i) => !isLikelyNonMusicVideo(i));
+        if (musicOnly.length >= 3) return musicOnly.slice(0, 10);
+      }
+    }
+    // Fallback: gather tracks across shelves that have square album artwork (googleusercontent.com)
+    const squareAlbumItems = filteredSections
+      .flatMap((s) => s.items)
+      .filter(
+        (item, idx, arr) =>
+          !isLikelyNonMusicVideo(item) &&
+          (item.thumbnailUrl || '').includes('googleusercontent.com') &&
+          arr.findIndex((x) => x.id === item.id) === idx
+      );
+    return squareAlbumItems.length >= 3 ? squareAlbumItems.slice(0, 10) : [];
   }, [filteredSections]);
 
   // Extract tracks for "Jump back in"
@@ -275,19 +422,25 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
     }
   };
 
+  // Top 3 covers for the Fanned Liked Songs Bento Card
+  const fanCovers = useMemo(() => {
+    const pool = likedTracks.length > 0 ? likedTracks : recentlyPlayed;
+    return pool.slice(0, 3).map((t) => sizedArtwork(t.thumbnailUrl, 226));
+  }, [likedTracks, recentlyPlayed]);
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '40px',
+        gap: '34px',
         paddingBottom: '140px',
         maxWidth: '1480px',
         margin: '0 auto',
         width: '100%'
       }}
     >
-      {/* 1. Signature Koda "Your Mix" Organic Collage Hero (Spotlight Layout Mode) */}
+      {/* 1. Signature M3 Expressive "Your Mix" Contained Ambient Stage (Spotlight Mode) */}
       {mixTracks.length > 0 && homeLayoutMode === 'spotlight' && (
         <YourMixHero
           tracks={filterExplicit ? mixTracks.filter((t) => !t.isExplicit) : mixTracks}
@@ -298,7 +451,207 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
         />
       )}
 
-      {/* 2. Recently Played Songs Shelf (BitChord / YouTube Music / Apple Music standard) */}
+      {/* 1B. Quick Dial 6-Tile Speed-Dial Bento Grid */}
+      {quickDialItems.length >= 3 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span
+                className="material-symbols-rounded filled"
+                style={{ fontSize: '20px', color: 'var(--md-sys-color-primary)' }}
+              >
+                bolt
+              </span>
+              <h2
+                style={{
+                  fontSize: '18px',
+                  fontWeight: 800,
+                  letterSpacing: '-0.015em',
+                  margin: 0,
+                  color: 'var(--md-sys-color-on-surface)'
+                }}
+              >
+                Quick Dial
+              </h2>
+            </div>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-on-surface-variant)' }}>
+              Instant 1-tap playback
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isWideScreen
+                ? 'repeat(3, minmax(0, 1fr))'
+                : 'repeat(auto-fill, minmax(240px, 1fr))',
+              gap: '12px'
+            }}
+          >
+            {quickDialItems.map((item, qIdx) => {
+              const isItemPlaying = currentTrack?.id === item.id && isPlaying;
+              const isHovered = hoveredQuickId === item.id;
+              const liked = isLiked(item.id);
+
+              return (
+                <div
+                  key={`quick-${item.id}-${qIdx}`}
+                  onMouseEnter={() => setHoveredQuickId(item.id)}
+                  onMouseLeave={() => setHoveredQuickId(null)}
+                  onClick={() => {
+                    if (currentTrack?.id === item.id) {
+                      togglePlay();
+                    } else {
+                      playTrack(item, quickDialItems);
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '8px 14px 8px 8px',
+                    borderRadius: isHovered || isItemPlaying ? '22px' : '16px',
+                    backgroundColor: isItemPlaying
+                      ? 'var(--md-sys-color-secondary-container)'
+                      : isHovered
+                      ? 'var(--md-sys-color-surface-container-high)'
+                      : 'var(--md-sys-color-surface-container)',
+                    border: isItemPlaying
+                      ? '1px solid var(--md-sys-color-primary)'
+                      : '1px solid var(--md-sys-color-outline-variant)',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
+                    transition:
+                      'border-radius 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 180ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    animation: `m3CardCascade 300ms var(--m3-ease-emphasized-decelerate) ${qIdx * 35}ms both`
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: '52px',
+                        height: '52px',
+                        clipPath: isHovered || isItemPlaying ? SHAPES.scallop12 : undefined,
+                        borderRadius: isHovered || isItemPlaying ? '50%' : '12px',
+                        overflow: 'hidden',
+                        flexShrink: 0,
+                        backgroundColor: 'var(--md-sys-color-surface-container-highest)',
+                        transition: 'border-radius 300ms cubic-bezier(0.34, 1.56, 0.64, 1)'
+                      }}
+                    >
+                      <img
+                        src={sizedArtwork(item.thumbnailUrl, 120)}
+                        alt={item.title}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleArtworkError(e, item.thumbnailUrl)}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                      <span
+                        style={{
+                          fontSize: '14px',
+                          fontWeight: 750,
+                          color: isItemPlaying
+                            ? 'var(--md-sys-color-on-secondary-container)'
+                            : 'var(--md-sys-color-on-surface)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {item.title}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          color: 'var(--md-sys-color-on-surface-variant)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          marginTop: '2px'
+                        }}
+                      >
+                        {item.artist}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right Quick Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    {(isHovered || liked) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLikeTrack(item);
+                        }}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          border: 'none',
+                          backgroundColor: 'transparent',
+                          color: liked
+                            ? 'var(--md-sys-color-primary)'
+                            : 'var(--md-sys-color-on-surface-variant)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer'
+                        }}
+                        title={liked ? 'Unlike' : 'Like'}
+                      >
+                        <span
+                          className={`material-symbols-rounded ${liked ? 'filled' : ''}`}
+                          style={{
+                            fontSize: '18px',
+                            animation: liked ? 'm3HeartBurst 380ms cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none'
+                          }}
+                        >
+                          favorite
+                        </span>
+                      </button>
+                    )}
+
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        backgroundColor:
+                          isItemPlaying || isHovered
+                            ? 'var(--md-sys-color-primary)'
+                            : 'var(--md-sys-color-surface-container-highest)',
+                        color:
+                          isItemPlaying || isHovered
+                            ? 'var(--md-sys-color-on-primary)'
+                            : 'var(--md-sys-color-on-surface-variant)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 200ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        transform: isHovered ? 'scale(1.06)' : 'scale(1)'
+                      }}
+                    >
+                      <span className="material-symbols-rounded filled" style={{ fontSize: '20px' }}>
+                        {isItemPlaying ? 'pause' : 'play_arrow'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* 2. Recently Played Songs Shelf with Carousel Chevrons & Hover Micro-Actions */}
       {recentlyPlayed.length > 0 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -314,54 +667,70 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               >
                 Recently Played
               </h2>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-on-surface-variant)' }}>
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: 'var(--md-sys-color-on-surface-variant)',
+                  fontVariantNumeric: 'tabular-nums'
+                }}
+              >
                 {recentlyPlayed.length} songs
               </span>
             </div>
+
+            <ScrollNavButtons scrollRef={recentRailRef} />
           </div>
 
-          {/* Smooth horizontal scroll deck with no empty voids */}
           <div
+            ref={recentRailRef}
             style={{
               display: 'flex',
               gap: isWideScreen ? '18px' : '14px',
               overflowX: 'auto',
               scrollbarWidth: 'none',
-              paddingBottom: '8px',
               margin: '0 -4px',
-              padding: '0 4px 8px 4px'
+              padding: '4px 4px 10px 4px'
             }}
           >
             {recentlyPlayed.map((track, rIdx) => {
               const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+              const isHovered = hoveredRecentId === track.id;
+              const liked = isLiked(track.id);
+
               return (
                 <div
                   key={track.id}
-                  onClick={() => playTrack(track)}
+                  onMouseEnter={() => setHoveredRecentId(track.id)}
+                  onMouseLeave={() => setHoveredRecentId(null)}
+                  onClick={() => playTrack(track, recentlyPlayed)}
                   style={{
                     flex: '0 0 auto',
-                    width: isWideScreen ? '170px' : '136px',
+                    width: isWideScreen ? '174px' : '140px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '10px',
                     cursor: 'pointer',
                     userSelect: 'none',
                     animation: `m3CardCascade 340ms var(--m3-ease-emphasized-decelerate) ${Math.min(rIdx * 35, 350)}ms both`,
-                    transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)'
+                    transform: isHovered ? 'translateY(-5px)' : 'translateY(0)',
+                    transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)'
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0) scale(1)')}
                 >
-                  {/* Artwork Container */}
+                  {/* Artwork Container with M3 Shape Morph */}
                   <div
                     style={{
                       position: 'relative',
                       width: '100%',
                       aspectRatio: '1/1',
-                      borderRadius: '18px',
+                      borderRadius: isHovered || isThisPlaying ? '28px' : '18px',
                       overflow: 'hidden',
                       backgroundColor: 'var(--md-sys-color-surface-container)',
-                      boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.12))'
+                      boxShadow: isHovered
+                        ? '0 12px 28px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.25))'
+                        : '0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.12))',
+                      transition:
+                        'border-radius 320ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 220ms ease'
                     }}
                   >
                     <img
@@ -374,30 +743,111 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                         width: '100%',
                         height: '100%',
                         objectFit: 'cover',
-                        display: 'block'
+                        display: 'block',
+                        transform: isHovered ? 'scale(1.06)' : 'scale(1)',
+                        transition: 'transform 380ms cubic-bezier(0.2, 0, 0, 1)'
                       }}
                     />
 
-                    {/* Active playing indicator with live 4-bar equalizer wave */}
-                    {isThisPlaying && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          backgroundColor: 'rgba(0,0,0,0.5)',
-                          display: 'flex',
-                          alignItems: 'flex-end',
-                          justifyContent: 'center',
-                          paddingBottom: '16px',
-                          gap: '3px'
+                    {/* Top-Right Hover Heart & Queue Buttons */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        display: 'flex',
+                        gap: '6px',
+                        opacity: isHovered || liked ? 1 : 0,
+                        transform: isHovered || liked ? 'translateY(0)' : 'translateY(-4px)',
+                        transition: 'all 180ms ease',
+                        zIndex: 3
+                      }}
+                    >
+                      {isHovered && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addToQueue(track);
+                          }}
+                          style={{
+                            width: '30px',
+                            height: '30px',
+                            borderRadius: '50%',
+                            backgroundColor: 'rgba(17, 19, 24, 0.72)',
+                            backdropFilter: 'blur(8px)',
+                            border: '1px solid rgba(255,255,255,0.14)',
+                            color: '#ffffff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                          title="Add to queue"
+                        >
+                          <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>
+                            queue_music
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLikeTrack(track);
                         }}
+                        style={{
+                          width: '30px',
+                          height: '30px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(17, 19, 24, 0.72)',
+                          backdropFilter: 'blur(8px)',
+                          border: '1px solid rgba(255,255,255,0.14)',
+                          color: liked ? 'var(--md-sys-color-primary)' : '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer'
+                        }}
+                        title={liked ? 'Unlike' : 'Like'}
                       >
-                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar1 0.75s ease-in-out infinite' }} />
-                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar2 0.55s ease-in-out infinite 0.1s' }} />
-                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar3 0.85s ease-in-out infinite 0.2s' }} />
-                        <span style={{ width: '3px', height: '18px', backgroundColor: 'var(--md-sys-color-primary)', borderRadius: '9999px', animation: 'm3EqualizerBar4 0.65s ease-in-out infinite 0.05s' }} />
-                      </div>
-                    )}
+                        <span
+                          className={`material-symbols-rounded ${liked ? 'filled' : ''}`}
+                          style={{
+                            fontSize: '16px',
+                            animation: liked ? 'm3HeartBurst 380ms cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none'
+                          }}
+                        >
+                          favorite
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Bottom-Right Hover Play FAB */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: '10px',
+                        right: '10px',
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--md-sys-color-primary)',
+                        color: 'var(--md-sys-color-on-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.4)',
+                        opacity: isHovered || isThisPlaying ? 1 : 0,
+                        transform: isHovered || isThisPlaying ? 'scale(1)' : 'scale(0.75) translateY(6px)',
+                        transition: 'all 200ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        zIndex: 3
+                      }}
+                    >
+                      <span className="material-symbols-rounded filled" style={{ fontSize: '22px' }}>
+                        {isThisPlaying ? 'graphic_eq' : 'play_arrow'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Metadata */}
@@ -406,7 +856,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                       style={{
                         fontSize: isWideScreen ? '14px' : '13px',
                         fontWeight: 700,
-                        color: 'var(--md-sys-color-on-surface)',
+                        color: isThisPlaying
+                          ? 'var(--md-sys-color-primary)'
+                          : 'var(--md-sys-color-on-surface)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
@@ -436,7 +888,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
         </section>
       )}
 
-      {/* 3. Recent Albums Section (Only rendered if >= 3 albums exist to prevent empty voids) */}
+      {/* 3. Recent Albums Section with Carousel Chevrons & Hover Play FAB */}
       {recentAlbums.length >= 3 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -451,88 +903,128 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
             >
               Recent Albums
             </h2>
+            <ScrollNavButtons scrollRef={albumsRailRef} />
           </div>
 
           <div
+            ref={albumsRailRef}
             style={{
               display: 'flex',
               gap: isWideScreen ? '18px' : '14px',
               overflowX: 'auto',
               scrollbarWidth: 'none',
-              paddingBottom: '8px'
+              padding: '4px 0 10px 0'
             }}
           >
-            {recentAlbums.map((item, idx) => (
-              <div
-                key={`${item.id}-${idx}`}
-                onClick={() => handleCardClick(item, recentAlbums)}
-                style={{
-                  flex: '0 0 auto',
-                  width: isWideScreen ? '170px' : '136px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  transition: 'transform 180ms ease'
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-              >
+            {recentAlbums.map((item, idx) => {
+              const isHovered = hoveredAlbumId === `${item.id}-${idx}`;
+              return (
                 <div
+                  key={`${item.id}-${idx}`}
+                  onMouseEnter={() => setHoveredAlbumId(`${item.id}-${idx}`)}
+                  onMouseLeave={() => setHoveredAlbumId(null)}
+                  onClick={() => handleCardClick(item, recentAlbums)}
                   style={{
-                    width: '100%',
-                    aspectRatio: '1 / 1',
-                    borderRadius: '20px',
-                    overflow: 'hidden',
-                    backgroundColor: 'var(--md-sys-color-surface-container-high)',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
-                    position: 'relative'
+                    flex: '0 0 auto',
+                    width: isWideScreen ? '174px' : '140px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transform: isHovered ? 'translateY(-5px)' : 'translateY(0)',
+                    transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)'
                   }}
                 >
-                  <img
-                    src={sizedArtwork(item.thumbnailUrl || item.highResThumbnailUrl, 300)}
-                    alt={item.title}
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => handleArtworkError(e, item.thumbnailUrl)}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span
+                  <div
                     style={{
-                      fontSize: '14px',
-                      fontWeight: 700,
-                      color: 'var(--md-sys-color-on-surface)',
+                      width: '100%',
+                      aspectRatio: '1 / 1',
+                      borderRadius: isHovered ? '28px' : '20px',
                       overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
+                      backgroundColor: 'var(--md-sys-color-surface-container-high)',
+                      boxShadow: isHovered
+                        ? '0 14px 30px rgba(0, 0, 0, 0.36)'
+                        : '0 8px 24px rgba(0, 0, 0, 0.25)',
+                      position: 'relative',
+                      transition: 'border-radius 320ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 220ms ease'
                     }}
                   >
-                    {item.title}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      color: 'var(--md-sys-color-outline)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      marginTop: '2px'
-                    }}
-                  >
-                    {item.artist}
-                  </span>
+                    <img
+                      src={sizedArtwork(item.thumbnailUrl || item.highResThumbnailUrl, 300)}
+                      alt={item.title}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => handleArtworkError(e, item.thumbnailUrl)}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        transform: isHovered ? 'scale(1.06)' : 'scale(1)',
+                        transition: 'transform 380ms cubic-bezier(0.2, 0, 0, 1)'
+                      }}
+                    />
+
+                    {/* Hover Play FAB */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: '10px',
+                        right: '10px',
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--md-sys-color-primary)',
+                        color: 'var(--md-sys-color-on-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.45)',
+                        opacity: isHovered ? 1 : 0,
+                        transform: isHovered ? 'scale(1)' : 'scale(0.75) translateY(6px)',
+                        transition: 'all 200ms cubic-bezier(0.34, 1.56, 0.64, 1)'
+                      }}
+                    >
+                      <span className="material-symbols-rounded filled" style={{ fontSize: '22px' }}>
+                        play_arrow
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span
+                      style={{
+                        fontSize: '14px',
+                        fontWeight: 700,
+                        color: 'var(--md-sys-color-on-surface)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {item.title}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        color: 'var(--md-sys-color-outline)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        marginTop: '2px'
+                      }}
+                    >
+                      {item.artist}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
 
-      {/* 4. Your Playlists Section (Matching Koda Screenshot) */}
+      {/* 4. Your Playlists Section (With 3-Cover Fanned Bento Cards) */}
       <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2
@@ -574,11 +1066,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
             display: 'grid',
             gridTemplateColumns: isWideScreen
               ? 'repeat(auto-fill, minmax(200px, 1fr))'
-              : 'repeat(auto-fill, minmax(140px, 1fr))',
+              : 'repeat(auto-fill, minmax(145px, 1fr))',
             gap: isWideScreen ? '20px' : '14px'
           }}
         >
-          {/* Card 1: Liked Songs with Koda's Signature Scalloped Star Badge */}
+          {/* Card 1: Liked Songs with 3-Cover Fanned Artwork Stack & Softburst Star Badge */}
           <div
             onClick={() => {
               if (onOpenPlaylist) {
@@ -595,9 +1087,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               gap: '8px',
               cursor: 'pointer',
               userSelect: 'none',
-              transition: 'transform 200ms ease'
+              transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)'
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-5px)')}
             onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
           >
             <div
@@ -605,48 +1097,107 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                 width: '100%',
                 aspectRatio: '1 / 1',
                 borderRadius: '26px',
-                backgroundColor: 'var(--md-sys-color-surface-container)',
+                background:
+                  'linear-gradient(145deg, var(--md-sys-color-primary-container) 0%, var(--md-sys-color-surface-container-high) 100%)',
                 border: '1px solid var(--md-sys-color-outline-variant)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.08))',
-                position: 'relative'
+                boxShadow: '0 8px 24px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.14))',
+                position: 'relative',
+                overflow: 'hidden'
               }}
             >
+              {/* Fanned 3-Cover Artwork Stack Behind Badge */}
+              {fanCovers.map((cover, cIdx) => {
+                const angles = [-14, 0, 14];
+                const offsets = [-22, 0, 22];
+                return (
+                  <img
+                    key={cIdx}
+                    src={cover}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handleArtworkError(e, cover)}
+                    style={{
+                      position: 'absolute',
+                      width: '52%',
+                      height: '52%',
+                      borderRadius: '14px',
+                      objectFit: 'cover',
+                      opacity: 0.42,
+                      boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
+                      transform: `translateX(${offsets[cIdx] || 0}px) rotate(${angles[cIdx] || 0}deg)`
+                    }}
+                  />
+                );
+              })}
+
               {/* Die-Cut Softburst Star Cookie Badge */}
               <div
                 style={{
-                  width: '64px',
-                  height: '64px',
+                  position: 'relative',
+                  zIndex: 2,
+                  width: '66px',
+                  height: '66px',
                   backgroundColor: 'var(--md-sys-color-primary)',
                   color: 'var(--md-sys-color-on-primary)',
                   clipPath: SHAPES.softBurst,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0,0,0,0.15))'
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
                 }}
               >
-                <span className="material-symbols-rounded" style={{ fontSize: '30px', fontVariationSettings: "'FILL' 1" }}>
+                <span className="material-symbols-rounded filled" style={{ fontSize: '30px' }}>
                   favorite
                 </span>
               </div>
+
+              {/* Count Badge */}
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: '10px',
+                  left: '12px',
+                  zIndex: 2,
+                  padding: '3px 9px',
+                  borderRadius: '9999px',
+                  backgroundColor: 'rgba(17, 19, 24, 0.68)',
+                  backdropFilter: 'blur(8px)',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: '#ffffff',
+                  fontVariantNumeric: 'tabular-nums'
+                }}
+              >
+                {likedTracks.length} songs
+              </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--md-sys-color-on-surface)' }}>
                 Liked songs
               </span>
-              <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--md-sys-color-on-surface-variant)', marginTop: '2px' }}>
-                {likedTracks.length} songs
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: 'var(--md-sys-color-on-surface-variant)',
+                  marginTop: '2px',
+                  fontVariantNumeric: 'tabular-nums'
+                }}
+              >
+                {likedTracks.length} songs • Auto-synced
               </span>
             </div>
           </div>
 
-          {/* Card 2: Your Likes / Radio */}
+          {/* Card 2: Instant Personal Radio / Mix */}
           <div
             onClick={() => {
-              if (onOpenPlaylist) {
+              if (mixTracks.length > 0) {
+                playTrack(mixTracks[0], mixTracks);
+              } else if (onOpenPlaylist) {
                 onOpenPlaylist({
                   id: 'playlist_LM',
                   title: 'Your Likes',
@@ -660,9 +1211,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               gap: '8px',
               cursor: 'pointer',
               userSelect: 'none',
-              transition: 'transform 200ms ease'
+              transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)'
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-5px)')}
             onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
           >
             <div
@@ -670,30 +1221,46 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                 width: '100%',
                 aspectRatio: '1 / 1',
                 borderRadius: '26px',
-                backgroundColor: 'var(--md-sys-color-surface-container)',
+                background:
+                  'linear-gradient(145deg, var(--md-sys-color-tertiary-container) 0%, var(--md-sys-color-surface-container-high) 100%)',
                 border: '1px solid var(--md-sys-color-outline-variant)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 16px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.08))'
+                boxShadow: '0 8px 24px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.14))',
+                position: 'relative',
+                overflow: 'hidden'
               }}
             >
-              <span className="material-symbols-rounded" style={{ fontSize: '36px', color: 'var(--md-sys-color-on-surface-variant)' }}>
-                queue_music
-              </span>
+              <div
+                style={{
+                  width: '66px',
+                  height: '66px',
+                  backgroundColor: 'var(--md-sys-color-tertiary)',
+                  color: 'var(--md-sys-color-on-tertiary)',
+                  clipPath: SHAPES.scallop12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <span className="material-symbols-rounded filled" style={{ fontSize: '30px' }}>
+                  radio
+                </span>
+              </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--md-sys-color-on-surface)' }}>
-                Your Likes
+                My Supermix Radio
               </span>
               <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--md-sys-color-on-surface-variant)', marginTop: '2px' }}>
-                You
+                Continuous station
               </span>
             </div>
           </div>
 
           {/* Skeletons while loading playlists */}
-          {loadingPlaylists && userPlaylists.length === 0 && (
+          {loadingPlaylists && combinedPlaylists.length === 0 && (
             <>
               {[0, 1].map((idx) => (
                 <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -722,74 +1289,37 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
             </>
           )}
 
-          {/* User Playlists from YouTube Music (with 4-grid collages or cover art) */}
-          {userPlaylists.slice(0, 6).map((pl) => (
-            <div
+          {/* User Playlists from YouTube Music + Saved Playlists */}
+          {combinedPlaylists.slice(0, 6).map((pl, plIdx) => (
+            <MediaCard
               key={pl.id}
-              onClick={() => onOpenPlaylist?.({ id: pl.id, title: pl.title, subtitle: pl.subtitle, imageUrl: pl.imageUrl })}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                cursor: 'pointer',
-                userSelect: 'none',
-                transition: 'transform 200ms ease'
+              id={pl.id}
+              index={plIdx}
+              title={pl.title}
+              subtitle={pl.subtitle || 'Playlist'}
+              imageUrl={pl.imageUrl}
+              isPlaylist={true}
+              onClick={() =>
+                onOpenPlaylist?.({
+                  id: pl.id,
+                  title: pl.title,
+                  subtitle: pl.subtitle,
+                  imageUrl: pl.imageUrl,
+                  author: pl.author
+                })
+              }
+              onPlay={async () => {
+                const tracks = await innertubeService.resolvePlaylistTracks(pl.id);
+                if (tracks.length > 0) {
+                  playTrack(tracks[0], tracks);
+                }
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-            >
-              <div
-                style={{
-                  width: '100%',
-                  aspectRatio: '1 / 1',
-                  borderRadius: '26px',
-                  overflow: 'hidden',
-                  backgroundColor: 'var(--md-sys-color-surface-container-high)',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
-                }}
-              >
-                <img
-                  src={sizedArtwork(pl.imageUrl, 300)}
-                  alt={pl.title}
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => handleArtworkError(e, pl.imageUrl)}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    color: 'var(--md-sys-color-on-surface)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {pl.title}
-                </span>
-                <span
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    color: 'var(--md-sys-color-outline)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    marginTop: '2px'
-                  }}
-                >
-                  {pl.subtitle || 'Playlist'}
-                </span>
-              </div>
-            </div>
+            />
           ))}
         </div>
       </section>
 
-      {/* 5. Your Top Artists Rail WITH REAL ARTIST PHOTOS (Matching Koda Screenshot) */}
+      {/* 5. Your Top Artists Rail WITH REAL ARTIST PHOTOS, RANK BADGES & HOVER PLAY MIX */}
       {topArtists.length > 0 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -804,22 +1334,27 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
             >
               Your top artists
             </h2>
+            <ScrollNavButtons scrollRef={artistsRailRef} />
           </div>
 
           <div
+            ref={artistsRailRef}
             style={{
               display: 'flex',
-              gap: isWideScreen ? '32px' : '20px',
+              gap: isWideScreen ? '28px' : '18px',
               overflowX: 'auto',
-              paddingBottom: '12px',
+              padding: '6px 4px 12px 4px',
               scrollbarWidth: 'none'
             }}
           >
             {topArtists.map((artist, idx) => {
               const photo = artistPhotoService.getCachedPhoto(artist.name);
+              const isHovered = hoveredArtistIdx === idx;
               return (
                 <div
                   key={`${artist.name}-${idx}`}
+                  onMouseEnter={() => setHoveredArtistIdx(idx)}
+                  onMouseLeave={() => setHoveredArtistIdx(null)}
                   onClick={() => onOpenArtist?.({ name: artist.name, imageUrl: photo || undefined })}
                   style={{
                     display: 'flex',
@@ -830,25 +1365,49 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                     userSelect: 'none',
                     textAlign: 'center',
                     flexShrink: 0,
-                    width: isWideScreen ? '110px' : '90px',
-                    transition: 'transform 200ms ease'
+                    width: isWideScreen ? '114px' : '92px',
+                    transform: isHovered ? 'translateY(-4px) scale(1.04)' : 'scale(1)',
+                    transition: 'transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    position: 'relative'
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.06)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                 >
-                  {/* Organic Scalloped Flower / Cookie Shape Photo Mask (Matching Koda) */}
+                  {/* Rank Badge for Top 3 */}
+                  {idx < 3 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '0px',
+                        left: '6px',
+                        zIndex: 4,
+                        padding: '2px 7px',
+                        borderRadius: '9999px',
+                        backgroundColor: 'var(--md-sys-color-tertiary-container)',
+                        color: 'var(--md-sys-color-on-tertiary-container)',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                        fontVariantNumeric: 'tabular-nums'
+                      }}
+                    >
+                      #{idx + 1}
+                    </span>
+                  )}
+
+                  {/* Organic Scalloped 9-Sided Cookie Shape Photo Mask */}
                   <div
                     style={{
-                      width: isWideScreen ? '100px' : '82px',
-                      height: isWideScreen ? '100px' : '82px',
-                      clipPath: SHAPES.cookie9Sided,
-                      backgroundColor: 'var(--md-sys-color-primary-container, rgba(255, 255, 255, 0.12))',
-                      color: 'var(--md-sys-color-on-primary-container, var(--md-sys-color-on-surface))',
+                      width: isWideScreen ? '102px' : '84px',
+                      height: isWideScreen ? '102px' : '84px',
+                      clipPath: isHovered ? SHAPES.scallop12 : SHAPES.cookie9Sided,
+                      backgroundColor: 'var(--md-sys-color-primary-container)',
+                      color: 'var(--md-sys-color-on-primary-container)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-                      overflow: 'hidden'
+                      overflow: 'hidden',
+                      position: 'relative',
+                      transition: 'clip-path 300ms ease'
                     }}
                   >
                     {photo ? (
@@ -856,7 +1415,15 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                         src={photo}
                         alt={artist.name}
                         loading="lazy"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => handleArtworkError(e, photo)}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          transform: isHovered ? 'scale(1.08)' : 'scale(1)',
+                          transition: 'transform 320ms ease'
+                        }}
                       />
                     ) : (
                       <span style={{ fontSize: isWideScreen ? '36px' : '28px', fontWeight: 900 }}>
@@ -870,11 +1437,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                       style={{
                         fontSize: '13px',
                         fontWeight: 700,
-                        color: 'var(--md-sys-color-on-surface)',
+                        color: isHovered ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-on-surface)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
-                        width: '100%'
+                        width: '100%',
+                        transition: 'color 160ms ease'
                       }}
                     >
                       {artist.name}
@@ -884,7 +1452,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                         fontSize: '11px',
                         fontWeight: 500,
                         color: 'var(--md-sys-color-outline)',
-                        marginTop: '2px'
+                        marginTop: '2px',
+                        fontVariantNumeric: 'tabular-nums'
                       }}
                     >
                       {artist.plays} {artist.plays === 1 ? 'play' : 'plays'}
@@ -915,22 +1484,27 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
             <button
               onClick={() => playTrack(jumpBackInTracks[0], jumpBackInTracks)}
               style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                color: 'var(--md-sys-color-on-surface)',
-                border: 'none',
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer'
+                gap: '6px',
+                padding: '7px 14px',
+                borderRadius: '9999px',
+                backgroundColor: 'var(--md-sys-color-surface-container)',
+                color: 'var(--md-sys-color-on-surface)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 160ms ease'
               }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container)')}
               title="Play all"
             >
-              <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
-                arrow_forward
+              <span className="material-symbols-rounded filled" style={{ fontSize: '16px', color: 'var(--md-sys-color-primary)' }}>
+                play_arrow
               </span>
+              <span>Play All</span>
             </button>
           </div>
 
@@ -939,72 +1513,25 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
               display: 'grid',
               gridTemplateColumns: isWideScreen
                 ? 'repeat(auto-fill, minmax(200px, 1fr))'
-                : 'repeat(auto-fill, minmax(140px, 1fr))',
+                : 'repeat(auto-fill, minmax(145px, 1fr))',
               gap: isWideScreen ? '20px' : '14px'
             }}
           >
             {jumpBackInTracks.map((item, idx) => (
-              <div
+              <MediaCard
                 key={`${item.id}-${idx}`}
+                id={item.id}
+                index={idx}
+                title={item.title}
+                subtitle={item.artist}
+                imageUrl={item.thumbnailUrl || item.highResThumbnailUrl || ''}
+                isPlaying={currentTrack?.id === item.id && isPlaying}
+                isLiked={isLiked(item.id)}
                 onClick={() => playTrack(item, jumpBackInTracks)}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  transition: 'transform 200ms ease'
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-4px)')}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-              >
-                <div
-                  style={{
-                    width: '100%',
-                    aspectRatio: '1 / 1',
-                    borderRadius: '26px',
-                    overflow: 'hidden',
-                    backgroundColor: 'var(--md-sys-color-surface-container-high)',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
-                  }}
-                >
-                  <img
-                    src={sizedArtwork(item.thumbnailUrl || item.highResThumbnailUrl, 300)}
-                    alt={item.title}
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => handleArtworkError(e, item.thumbnailUrl)}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span
-                    style={{
-                      fontSize: '14px',
-                      fontWeight: 700,
-                      color: 'var(--md-sys-color-on-surface)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {item.title}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      color: 'var(--md-sys-color-outline)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      marginTop: '2px'
-                    }}
-                  >
-                    {item.artist}
-                  </span>
-                </div>
-              </div>
+                onPlay={() => playTrack(item, jumpBackInTracks)}
+                onToggleLike={() => toggleLikeTrack(item)}
+                onQueue={() => addToQueue(item)}
+              />
             ))}
           </div>
         </section>
@@ -1024,8 +1551,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
         </div>
       )}
 
-      {/* 7. Additional Personalized Shelves from YouTube Music */}
-      {filteredSections.slice(2).map((section, sIdx) => (
+      {/* 7. Additional Personalized Shelves from YouTube Music (plus first 2 shelves if in Classic Mode) */}
+      {(homeLayoutMode === 'classic' ? filteredSections : filteredSections.slice(2)).map((section, sIdx) => (
         <section key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h2
@@ -1059,8 +1586,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                 subtitle={item.artist}
                 imageUrl={item.thumbnailUrl}
                 isPlaylist={item.id.startsWith('playlist_')}
+                isPlaying={currentTrack?.id === item.id && isPlaying}
+                isLiked={!item.id.startsWith('playlist_') ? isLiked(item.id) : undefined}
                 onClick={() => handleCardClick(item, section.items)}
                 onPlay={() => handleCardClick(item, section.items)}
+                onToggleLike={!item.id.startsWith('playlist_') ? () => toggleLikeTrack(item) : undefined}
+                onQueue={!item.id.startsWith('playlist_') ? () => addToQueue(item) : undefined}
               />
             ))}
           </div>

@@ -275,28 +275,30 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
                   type="button"
                   onClick={() => handleSelectChip(chip)}
                   style={{
-                    padding: '7px 16px',
-                    borderRadius: '9999px',
+                    padding: isSelected ? '7px 18px' : '7px 16px',
+                    borderRadius: isSelected ? '14px' : '9999px',
                     fontSize: '13px',
-                    fontWeight: isSelected ? 700 : 500,
+                    fontWeight: isSelected ? 750 : 500,
                     whiteSpace: 'nowrap',
                     cursor: 'pointer',
                     border: isSelected
-                      ? '1px solid transparent'
+                      ? '1px solid var(--md-sys-color-primary)'
                       : '1px solid var(--md-sys-color-outline-variant, rgba(255,255,255,0.12))',
                     backgroundColor: isSelected
-                      ? '#ffd8e4' // Koda pastel rose pill
+                      ? 'var(--md-sys-color-secondary-container, #ffd8e4)'
                       : 'var(--md-sys-color-surface-container, rgba(255,255,255,0.06))',
                     color: isSelected
-                      ? '#381e72' // Deep plum text on active pill
+                      ? 'var(--md-sys-color-on-secondary-container, #381e72)'
                       : 'var(--md-sys-color-on-surface, #e6e1e5)',
                     boxShadow: isSelected
-                      ? '0 2px 8px rgba(244, 114, 182, 0.25)'
+                      ? '0 2px 10px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))'
                       : 'none',
                     outline: 'none',
-                    transition: 'all 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    transition: 'border-radius 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 180ms ease, transform 150ms ease',
                     flexShrink: 0
                   }}
+                  onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.94)')}
+                  onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                   onMouseEnter={(e) => {
                     if (!isSelected) {
                       e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high, rgba(255,255,255,0.1))';
@@ -391,6 +393,176 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
         </div>
       ) : (
         <>
+          {/* M3 Expressive Featured Video Spotlight Bento Banner (Shown on 'all' chip) */}
+          {!isSubscriptions && selectedChipId === 'all' && videos.length > 0 && (
+            <div
+              onClick={() => onPlayVideo(videos[0])}
+              style={{
+                position: 'relative',
+                borderRadius: '28px',
+                backgroundColor: 'var(--md-sys-color-surface-container-low)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
+                padding: '22px 26px',
+                marginBottom: '26px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '24px',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                boxShadow: '0 12px 36px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.22))',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)'
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-3px)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+            >
+              {/* Ambient Blurred Backdrop */}
+              <img
+                src={videos[0].thumbnailUrl}
+                alt=""
+                referrerPolicy="no-referrer"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: 0.14,
+                  filter: 'blur(40px) saturate(160%)',
+                  pointerEvents: 'none'
+                }}
+              />
+
+              {/* Left 16:9 Thumbnail Preview */}
+              <div
+                style={{
+                  position: 'relative',
+                  width: '320px',
+                  maxWidth: '100%',
+                  aspectRatio: '16 / 9',
+                  borderRadius: '18px',
+                  overflow: 'hidden',
+                  backgroundColor: 'var(--md-sys-color-surface-container-high)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.38)',
+                  flexShrink: 0,
+                  zIndex: 1
+                }}
+              >
+                <img
+                  src={videos[0].thumbnailUrl}
+                  alt={videos[0].title}
+                  referrerPolicy="no-referrer"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                {videos[0].durationFormatted && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      bottom: '8px',
+                      right: '8px',
+                      padding: '3px 8px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(12, 14, 19, 0.82)',
+                      color: '#ffffff',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      fontVariantNumeric: 'tabular-nums'
+                    }}
+                  >
+                    {videos[0].durationFormatted}
+                  </span>
+                )}
+              </div>
+
+              {/* Right Spotlight Details & Action */}
+              <div style={{ flex: 1, minWidth: '240px', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '4px 10px',
+                      borderRadius: '9999px',
+                      backgroundColor: 'var(--md-sys-color-primary-container)',
+                      color: 'var(--md-sys-color-on-primary-container)',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase'
+                    }}
+                  >
+                    <span className="material-symbols-rounded filled" style={{ fontSize: '14px' }}>
+                      auto_awesome
+                    </span>
+                    Featured Pick
+                  </span>
+                  {videos[0].uploadedDate && (
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-on-surface-variant)' }}>
+                      {videos[0].uploadedDate}
+                    </span>
+                  )}
+                </div>
+
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 'clamp(18px, 2vw, 22px)',
+                    fontWeight: 800,
+                    lineHeight: 1.25,
+                    color: 'var(--md-sys-color-on-surface)',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden'
+                  }}
+                >
+                  {videos[0].title}
+                </h2>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '13px', fontWeight: 600 }}>
+                  <span>{videos[0].channelName}</span>
+                  {videos[0].viewCount && (
+                    <>
+                      <span>•</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{videos[0].viewCount}</span>
+                    </>
+                  )}
+                </div>
+
+                <div style={{ marginTop: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlayVideo(videos[0]);
+                    }}
+                    style={{
+                      height: '44px',
+                      padding: '0 22px',
+                      borderRadius: '9999px',
+                      backgroundColor: 'var(--md-sys-color-primary)',
+                      color: 'var(--md-sys-color-on-primary)',
+                      border: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '13.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)'
+                    }}
+                  >
+                    <span className="material-symbols-rounded filled" style={{ fontSize: '20px' }}>
+                      play_arrow
+                    </span>
+                    <span>Watch Now</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Responsive Video Cards Grid */}
           <div
             style={{
@@ -399,7 +571,7 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
               gap: '26px 20px'
             }}
           >
-            {videos.map((video) => (
+            {(!isSubscriptions && selectedChipId === 'all' ? videos.slice(1) : videos).map((video) => (
               <VideoCard
                 key={video.id}
                 video={video}

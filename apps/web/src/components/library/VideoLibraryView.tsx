@@ -19,11 +19,41 @@ export const VideoLibraryView: React.FC<VideoLibraryViewProps> = ({ onPlayVideo,
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<VideoSortOption>('recent');
 
-  const { likedVideos: localLikedVideos, savedPlaylists: localSavedPlaylists } = useTasteStore();
-  const [historyVideos, setHistoryVideos] = useState<VideoItem[]>([]);
+  const { likedVideos: localLikedVideos, savedPlaylists: localSavedPlaylists, videoHistory: localVideoHistory } = useTasteStore();
+  const [remoteHistoryVideos, setHistoryVideos] = useState<VideoItem[]>([]);
   const [watchLaterVideos, setWatchLaterVideos] = useState<VideoItem[]>([]);
   const [remoteLikedVideos, setLikedVideos] = useState<VideoItem[]>([]);
   const [remotePlaylists, setPlaylists] = useState<VideoPlaylist[]>([]);
+
+  const historyVideos = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: VideoItem[] = [];
+    for (const lv of localVideoHistory) {
+      if (!seen.has(lv.id)) {
+        seen.add(lv.id);
+        const durSec = lv.duration || 0;
+        const mins = Math.floor(durSec / 60);
+        const secs = String(Math.floor(durSec % 60)).padStart(2, '0');
+        merged.push({
+          id: lv.id,
+          title: lv.title,
+          channelName: lv.channelName,
+          channelId: lv.channelId,
+          thumbnailUrl: lv.thumbnailUrl,
+          duration: durSec,
+          durationFormatted: durSec > 0 ? `${mins}:${secs}` : '',
+          viewCount: lv.viewCountText || 'Watched recently'
+        });
+      }
+    }
+    for (const rv of remoteHistoryVideos) {
+      if (!seen.has(rv.id)) {
+        seen.add(rv.id);
+        merged.push(rv);
+      }
+    }
+    return merged;
+  }, [localVideoHistory, remoteHistoryVideos]);
 
   const likedVideos = useMemo(() => {
     const seen = new Set<string>();
