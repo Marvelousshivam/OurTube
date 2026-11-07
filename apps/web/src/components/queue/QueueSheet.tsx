@@ -572,7 +572,7 @@ export const QueueSheet: React.FC<QueueSheetProps> = ({ isEmbedded = false }) =>
                   onClick={() => {
                     setActiveMood(chip);
                     if (currentTrack) {
-                      loadRadioQueue(currentTrack.id);
+                      loadRadioQueue(currentTrack.id, chip);
                     }
                   }}
                   style={{

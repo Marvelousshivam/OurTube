@@ -1,6 +1,6 @@
 import React from 'react';
 import { TrackMetadata } from '../../types';
-import { sizedArtwork } from '../../api/artworkService';
+import { sizedArtwork, handleArtworkError } from '../../api/artworkService';
 
 interface YourMixHeroProps {
   tracks: TrackMetadata[];
@@ -77,8 +77,10 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
         title={primaryTrack.title}
       >
         <img
-          src={sizedArtwork(primaryTrack.highResThumbnailUrl || primaryTrack.thumbnailUrl, 800)}
+          src={sizedArtwork(primaryTrack.thumbnailUrl || primaryTrack.highResThumbnailUrl, 544)}
           alt={primaryTrack.title}
+          referrerPolicy="no-referrer"
+          onError={(e) => handleArtworkError(e, primaryTrack.thumbnailUrl)}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       </div>
@@ -113,8 +115,10 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
         title={secondaryTrack.title}
       >
         <img
-          src={sizedArtwork(secondaryTrack.highResThumbnailUrl || secondaryTrack.thumbnailUrl, 400)}
+          src={sizedArtwork(secondaryTrack.thumbnailUrl || secondaryTrack.highResThumbnailUrl, 400)}
           alt={secondaryTrack.title}
+          referrerPolicy="no-referrer"
+          onError={(e) => handleArtworkError(e, secondaryTrack.thumbnailUrl)}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       </div>
@@ -149,8 +153,10 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
         title={tertiaryTrack.title}
       >
         <img
-          src={sizedArtwork(tertiaryTrack.highResThumbnailUrl || tertiaryTrack.thumbnailUrl, 400)}
+          src={sizedArtwork(tertiaryTrack.thumbnailUrl || tertiaryTrack.highResThumbnailUrl, 400)}
           alt={tertiaryTrack.title}
+          referrerPolicy="no-referrer"
+          onError={(e) => handleArtworkError(e, tertiaryTrack.thumbnailUrl)}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       </div>
@@ -299,6 +305,8 @@ export const YourMixHero: React.FC<YourMixHeroProps> = ({
                     <img
                       src={sizedArtwork(t.thumbnailUrl, 60)}
                       alt={t.title}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => handleArtworkError(e, t.thumbnailUrl)}
                       style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover' }}
                     />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

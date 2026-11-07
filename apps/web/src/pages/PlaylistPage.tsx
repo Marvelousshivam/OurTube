@@ -28,10 +28,10 @@ export interface PlaylistPageProps {
 export const PlaylistPage: React.FC<PlaylistPageProps> = ({ playlist, onBack, onOpenArtist }) => {
   const [tracks, setTracks] = useState<TrackMetadata[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isSaved, setIsSaved] = useState(false);
 
   const { playTrack, currentTrack, isPlaying } = usePlayerStore();
-  const { isLiked, toggleLikeTrack } = useTasteStore();
+  const { isLiked, toggleLikeTrack, isPlaylistSaved, toggleSavePlaylist } = useTasteStore();
+  const isSaved = isPlaylistSaved(playlist.id);
 
   useEffect(() => {
     let isCurrent = true;
@@ -186,7 +186,15 @@ export const PlaylistPage: React.FC<PlaylistPageProps> = ({ playlist, onBack, on
               variant="tonal"
               size="lg"
               filledIcon={isSaved}
-              onClick={() => setIsSaved(!isSaved)}
+              onClick={() =>
+                toggleSavePlaylist({
+                  id: playlist.id,
+                  title: playlist.title,
+                  subtitle: playlist.subtitle || playlist.author || 'YouTube Music',
+                  thumbnailUrl: coverUrl,
+                  trackCount: tracks.length
+                })
+              }
               title={isSaved ? 'Remove from Library' : 'Save to Library'}
             />
           </div>

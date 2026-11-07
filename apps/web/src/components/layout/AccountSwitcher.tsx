@@ -43,39 +43,9 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
     }
   };
 
-  const selectedChannel = authState.selectedChannel || {
-    id: '0:own',
-    name: 'Shivam Raj',
-    handle: '@shivamraj6577',
-    avatarUrl: null
-  };
-  const accounts = authState.accounts && authState.accounts.length > 0 ? authState.accounts : [
-    {
-      authUser: '0',
-      name: 'Shivam Raj',
-      email: 'shivamraj6577@gmail.com',
-      avatarUrl: null,
-      channels: [selectedChannel as any]
-    },
-    {
-      authUser: '1',
-      name: 'Secondary Google Account',
-      email: 'account2@gmail.com',
-      avatarUrl: null,
-      channels: [
-        {
-          id: '1:own',
-          name: 'Secondary Google Account',
-          handle: '@google.account2',
-          avatarUrl: null,
-          brand: false,
-          authUser: '1',
-          pageId: null,
-          selectedOnWeb: false
-        }
-      ]
-    }
-  ];
+  const selectedChannel = authState.selectedChannel || null;
+  const accounts = authState.accounts && authState.accounts.length > 0 ? authState.accounts : [];
+  const isSignedIn = Boolean(authState.isAuthenticated && accounts.length > 0);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -119,7 +89,9 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
                   fontSize: '16px'
                 }}
               >
-                {selectedChannel?.name ? selectedChannel.name[0].toUpperCase() : 'S'}
+                {selectedChannel?.name ? selectedChannel.name[0].toUpperCase() : (
+                  <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>person</span>
+                )}
               </div>
             )}
             <div
@@ -130,7 +102,7 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
                 width: '10px',
                 height: '10px',
                 borderRadius: '50%',
-                backgroundColor: '#4caf50',
+                backgroundColor: isSignedIn ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-outline)',
                 border: '2px solid var(--md-sys-color-background)'
               }}
             />
@@ -205,7 +177,7 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
               textOverflow: 'ellipsis'
             }}
           >
-            {selectedChannel?.name || 'Account'}
+            {selectedChannel?.name || 'Guest Session'}
           </span>
           <span className="material-symbols-rounded" style={{ fontSize: '18px', color: 'var(--md-sys-color-outline)' }}>
             arrow_drop_down
@@ -245,77 +217,93 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '340px', overflowY: 'auto' }}>
-            {accounts.map((account, aIdx) => (
-              <div key={aIdx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {account.email && (
-                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--md-sys-color-outline)', padding: '4px 8px' }}>
-                    {account.email}
-                  </div>
-                )}
-                {account.channels.map((channel) => {
-                  const isSelected = selectedChannel?.id === channel.id;
-                  return (
-                    <div
-                      key={channel.id}
-                      onClick={() => !switching && handleSelectChannel(channel)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 10px',
-                        borderRadius: '12px',
-                        backgroundColor: isSelected ? 'var(--md-sys-color-primary-container)' : 'transparent',
-                        color: isSelected ? 'var(--md-sys-color-on-primary-container)' : 'var(--md-sys-color-on-surface)',
-                        cursor: switching ? 'wait' : 'pointer',
-                        transition: 'background-color 150ms ease'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                        {channel.avatarUrl ? (
-                          <img
-                            src={channel.avatarUrl}
-                            alt={channel.name}
-                            style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '50%',
-                              backgroundColor: 'var(--md-sys-color-surface-container-high)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 700,
-                              fontSize: '13px'
-                            }}
-                          >
-                            {channel.name[0]}
-                          </div>
-                        )}
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {channel.name}
-                          </div>
-                          {channel.handle && (
-                            <div style={{ fontSize: '11px', opacity: 0.7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {channel.handle}
+            {accounts.length === 0 ? (
+              <div
+                style={{
+                  padding: '16px 12px',
+                  borderRadius: '16px',
+                  backgroundColor: 'var(--md-sys-color-surface-container)',
+                  color: 'var(--md-sys-color-on-surface-variant)',
+                  fontSize: '12px',
+                  lineHeight: 1.5,
+                  textAlign: 'center'
+                }}
+              >
+                No signed-in YouTube account detected yet. Sign in to YouTube Music in your browser and click <strong>Sync Google Accounts</strong> below.
+              </div>
+            ) : (
+              accounts.map((account, aIdx) => (
+                <div key={aIdx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {account.email && (
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--md-sys-color-outline)', padding: '4px 8px' }}>
+                      {account.email}
+                    </div>
+                  )}
+                  {account.channels.map((channel) => {
+                    const isSelected = selectedChannel?.id === channel.id;
+                    return (
+                      <div
+                        key={channel.id}
+                        onClick={() => !switching && handleSelectChannel(channel)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 10px',
+                          borderRadius: '12px',
+                          backgroundColor: isSelected ? 'var(--md-sys-color-primary-container)' : 'transparent',
+                          color: isSelected ? 'var(--md-sys-color-on-primary-container)' : 'var(--md-sys-color-on-surface)',
+                          cursor: switching ? 'wait' : 'pointer',
+                          transition: 'background-color 150ms ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                          {channel.avatarUrl ? (
+                            <img
+                              src={channel.avatarUrl}
+                              alt={channel.name}
+                              style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '50%',
+                                backgroundColor: 'var(--md-sys-color-surface-container-high)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 700,
+                                fontSize: '13px'
+                              }}
+                            >
+                              {channel.name[0]}
                             </div>
                           )}
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {channel.name}
+                            </div>
+                            {channel.handle && (
+                              <div style={{ fontSize: '11px', opacity: 0.7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {channel.handle}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      {isSelected && (
-                        <span className="material-symbols-rounded filled" style={{ fontSize: '18px', color: 'var(--md-sys-color-primary)' }}>
-                          check_circle
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                        {isSelected && (
+                          <span className="material-symbols-rounded filled" style={{ fontSize: '18px', color: 'var(--md-sys-color-primary)' }}>
+                            check_circle
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            )}
           </div>
 
           <div style={{ borderTop: '1px solid var(--md-sys-color-outline-variant)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>

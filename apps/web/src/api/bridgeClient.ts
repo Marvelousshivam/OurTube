@@ -13,48 +13,11 @@ import {
 
 export type ExtensionConnectionState = 'checking' | 'missing' | 'connected';
 
-const INITIAL_PRIMARY_CHANNEL: YtChannel = {
-  id: '0:own',
-  name: 'Shivam Raj',
-  handle: '@shivamraj6577',
-  avatarUrl: null,
-  brand: false,
-  authUser: '0',
-  pageId: null,
-  selectedOnWeb: true
-};
-
-const INITIAL_SECONDARY_CHANNEL: YtChannel = {
-  id: '1:own',
-  name: 'Secondary Google Account',
-  handle: '@google.account2',
-  avatarUrl: null,
-  brand: false,
-  authUser: '1',
-  pageId: null,
-  selectedOnWeb: false
-};
-
 const INITIAL_AUTH_STATE: AuthState = {
-  isAuthenticated: true,
-  accounts: [
-    {
-      authUser: '0',
-      name: 'Shivam Raj',
-      email: 'shivamraj6577@gmail.com',
-      avatarUrl: null,
-      channels: [INITIAL_PRIMARY_CHANNEL]
-    },
-    {
-      authUser: '1',
-      name: 'Secondary Google Account',
-      email: 'account2@gmail.com',
-      avatarUrl: null,
-      channels: [INITIAL_SECONDARY_CHANNEL]
-    }
-  ],
-  selectedChannelId: '0:own',
-  selectedChannel: INITIAL_PRIMARY_CHANNEL
+  isAuthenticated: false,
+  accounts: [],
+  selectedChannelId: null,
+  selectedChannel: null
 };
 
 function sanitizeAuthState(state: AuthState): AuthState {
@@ -86,8 +49,17 @@ function loadCachedAuth(): AuthState {
     const cached = localStorage.getItem('ourtube_auth_cache');
     if (cached) {
       const parsed = JSON.parse(cached);
-      if (parsed && parsed.accounts && parsed.accounts.length > 0) {
-        return sanitizeAuthState(parsed);
+      if (parsed && Array.isArray(parsed.accounts)) {
+        // Filter out legacy hardcoded placeholder accounts if present in old cache
+        parsed.accounts = parsed.accounts.filter(
+          (a: YtAccount) =>
+            a.email !== 'account2@gmail.com' &&
+            a.name !== 'Secondary Google Account' &&
+            !(a.email === 'shivamraj6577@gmail.com' && !a.avatarUrl)
+        );
+        if (parsed.accounts.length > 0) {
+          return sanitizeAuthState(parsed);
+        }
       }
     }
   } catch {
@@ -276,10 +248,10 @@ class BridgeClient {
     try {
       const prevChannelId = this.authState.selectedChannelId;
       const auth = await this.sendRequest<AuthState>('KODA_BRIDGE_GET_AUTH');
-      if (auth && auth.accounts && auth.accounts.length > 0) {
-        this.authState = auth;
-        saveCachedAuth(auth);
-        if (auth.selectedChannelId !== prevChannelId) {
+      if (auth && Array.isArray(auth.accounts)) {
+        this.authState = sanitizeAuthState(auth);
+        saveCachedAuth(this.authState);
+        if (this.authState.selectedChannelId !== prevChannelId) {
           this.notifyAccountChange();
         }
       }

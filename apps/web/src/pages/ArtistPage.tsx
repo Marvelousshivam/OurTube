@@ -32,10 +32,11 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
 }) => {
   const [details, setDetails] = useState<ArtistDetails | null>(null);
   const [loading, setLoading] = useState(true);
-  const [following, setFollowing] = useState(false);
 
   const { playTrack, currentTrack, isPlaying } = usePlayerStore();
-  const { isLiked, toggleLikeTrack } = useTasteStore();
+  const { isLiked, toggleLikeTrack, isArtistFollowed, toggleFollowArtist } = useTasteStore();
+  const artistName = details?.name || artist.name;
+  const following = isArtistFollowed(artist.id || artistName);
 
   useEffect(() => {
     let isCurrent = true;
@@ -246,7 +247,14 @@ export const ArtistPage: React.FC<ArtistPageProps> = ({
                   variant={following ? 'filled' : 'outlined'}
                   size="md"
                   icon={following ? 'check' : 'favorite_border'}
-                  onClick={() => setFollowing(!following)}
+                  onClick={() =>
+                    toggleFollowArtist({
+                      id: artist.id || artistName,
+                      name: artistName,
+                      thumbnailUrl: highResBanner,
+                      subscribersText: details?.subscribers
+                    })
+                  }
                 >
                   {following ? 'Following' : 'Follow'}
                 </DSButton>

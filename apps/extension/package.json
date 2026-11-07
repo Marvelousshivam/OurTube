@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "vite build && node -e \"const fs=require('fs'); fs.copyFileSync('manifest.json', 'dist/manifest.json'); fs.cpSync('icons', 'dist/icons', {recursive: true});\" && node scripts/package-zip.js",
+    "build": "vite build && node -e \"const fs=require('fs'); fs.copyFileSync('manifest.json', 'dist/manifest.json'); fs.cpSync('icons', 'dist/icons', {recursive: true});\"",
     "dev": "vite build --watch"
   },
   "dependencies": {

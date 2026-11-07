@@ -3,9 +3,9 @@ import {
   APP_PALETTES,
   PALETTE_CATEGORIES,
   AppPalette,
-  PaletteStyle,
-  applyPaletteTheme
+  PaletteStyle
 } from '../../theme/ColorPalettes';
+import { useSettingsStore } from '../../store/settingsStore';
 
 interface PaletteStudioProps {
   onClose: () => void;
@@ -20,25 +20,20 @@ const PALETTE_STYLES: { id: PaletteStyle; label: string; desc: string }[] = [
 ];
 
 export const PaletteStudio: React.FC<PaletteStudioProps> = ({ onClose }) => {
-  const [selectedPaletteId, setSelectedPaletteId] = useState(
-    localStorage.getItem('koda_selected_palette') || 'electric'
-  );
-  const [selectedStyle, setSelectedStyle] = useState<PaletteStyle>(
-    (localStorage.getItem('koda_palette_style') as PaletteStyle) || 'TONAL_SPOT'
-  );
+  const {
+    selectedPaletteId,
+    paletteStyle: selectedStyle,
+    setSelectedPaletteId,
+    setPaletteStyle
+  } = useSettingsStore();
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   const handleSelectPalette = (palette: AppPalette) => {
     setSelectedPaletteId(palette.id);
-    localStorage.setItem('koda_selected_palette', palette.id);
-    applyPaletteTheme(palette, true, selectedStyle);
   };
 
   const handleSelectStyle = (style: PaletteStyle) => {
-    setSelectedStyle(style);
-    localStorage.setItem('koda_palette_style', style);
-    const pal = APP_PALETTES.find((p) => p.id === selectedPaletteId) || APP_PALETTES[0];
-    applyPaletteTheme(pal, true, style);
+    setPaletteStyle(style);
   };
 
   const displayedPalettes =

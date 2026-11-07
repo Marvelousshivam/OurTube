@@ -197,3 +197,26 @@ export function computeJump(
     shouldPivotStation: false
   };
 }
+
+/**
+ * Shuffles upcoming non-user tracks in the queue using Fisher-Yates while keeping history and hand-queued 'user' tracks intact.
+ */
+export function shuffleUpcomingQueue(
+  currentQueue: QueueEntry[],
+  currentIndex: number
+): QueueEntry[] {
+  if (currentQueue.length <= currentIndex + 2) return currentQueue;
+
+  const historyAndCurrent = currentQueue.slice(0, currentIndex + 1);
+  const upcoming = currentQueue.slice(currentIndex + 1);
+
+  const userEntries = upcoming.filter((e) => e.tier === 'user');
+  const shuffleable = upcoming.filter((e) => e.tier !== 'user');
+
+  for (let i = shuffleable.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffleable[i], shuffleable[j]] = [shuffleable[j], shuffleable[i]];
+  }
+
+  return [...historyAndCurrent, ...userEntries, ...shuffleable];
+}

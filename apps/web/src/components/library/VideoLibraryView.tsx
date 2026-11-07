@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { VideoItem, VideoPlaylist } from '../../types';
 import { innertubeService } from '../../api/innertubeService';
+import { useTasteStore } from '../../store/tasteStore';
 import { VideoCard } from '../video/VideoCard';
 import { VideoCardSkeleton } from '../video/VideoCardSkeleton';
 import { bridgeClient } from '../../api/bridgeClient';
@@ -18,10 +19,60 @@ export const VideoLibraryView: React.FC<VideoLibraryViewProps> = ({ onPlayVideo,
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<VideoSortOption>('recent');
 
+  const { likedVideos: localLikedVideos, savedPlaylists: localSavedPlaylists } = useTasteStore();
   const [historyVideos, setHistoryVideos] = useState<VideoItem[]>([]);
   const [watchLaterVideos, setWatchLaterVideos] = useState<VideoItem[]>([]);
-  const [likedVideos, setLikedVideos] = useState<VideoItem[]>([]);
-  const [playlists, setPlaylists] = useState<VideoPlaylist[]>([]);
+  const [remoteLikedVideos, setLikedVideos] = useState<VideoItem[]>([]);
+  const [remotePlaylists, setPlaylists] = useState<VideoPlaylist[]>([]);
+
+  const likedVideos = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: VideoItem[] = [];
+    for (const lv of localLikedVideos) {
+      if (!seen.has(lv.id)) {
+        seen.add(lv.id);
+        const durSec = lv.duration || 0;
+        const mins = Math.floor(durSec / 60);
+        const secs = String(Math.floor(durSec % 60)).padStart(2, '0');
+        merged.push({
+          id: lv.id,
+          title: lv.title,
+          channelName: lv.channelName,
+          channelId: lv.channelId,
+          thumbnailUrl: lv.thumbnailUrl,
+          duration: durSec,
+          durationFormatted: durSec > 0 ? `${mins}:${secs}` : '',
+          viewCount: lv.viewCountText || ''
+        });
+      }
+    }
+    for (const rv of remoteLikedVideos) {
+      if (!seen.has(rv.id)) {
+        seen.add(rv.id);
+        merged.push(rv);
+      }
+    }
+    return merged;
+  }, [localLikedVideos, remoteLikedVideos]);
+
+  const playlists = useMemo(() => {
+    const seen = new Set(remotePlaylists.map((p) => p.id.replace(/^playlist_/, '')));
+    const merged: VideoPlaylist[] = [...remotePlaylists];
+    for (const sp of localSavedPlaylists) {
+      const cleanId = sp.id.replace(/^playlist_/, '');
+      if (!seen.has(cleanId)) {
+        seen.add(cleanId);
+        merged.unshift({
+          id: sp.id,
+          title: sp.title,
+          thumbnailUrl: sp.thumbnailUrl || '',
+          videoCountText: sp.trackCount ? `${sp.trackCount} videos` : sp.subtitle || 'Saved',
+          channelName: sp.subtitle || 'Saved'
+        });
+      }
+    }
+    return merged;
+  }, [remotePlaylists, localSavedPlaylists]);
 
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingWatchLater, setLoadingWatchLater] = useState(false);

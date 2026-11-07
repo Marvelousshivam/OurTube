@@ -18,8 +18,8 @@ export class LyricsService {
     durationSeconds: number,
     videoId?: string
   ): Promise<LyricsData | null> {
-    const cleanTitle = this.cleanTrackTitle(trackName);
     const cleanArtist = this.cleanArtistName(artistName);
+    const cleanTitle = this.cleanTrackTitle(trackName, cleanArtist);
     const cacheKey = videoId || `${cleanTitle}:::${cleanArtist}`;
 
     if (this.lyricsCache.has(cacheKey)) {
@@ -75,13 +75,13 @@ export class LyricsService {
             .split('\n')
             .map((l) => l.trim())
             .filter((l) => l.length > 0)
-            .map((text, idx) => ({ time: idx * 5, text }));
+            .map((text) => ({ time: 0, text }));
 
           return {
             synced: false,
             wordSynced: false,
             provider: 'innertube',
-            ttml: writeTtml(lines),
+            ttml: writeTtml(lines, 'en', false),
             lines
           };
         }
@@ -190,13 +190,13 @@ export class LyricsService {
         .split('\n')
         .map((l: string) => l.trim())
         .filter((l: string) => l.length > 0)
-        .map((text: string, idx: number) => ({ time: idx * 5, text }));
+        .map((text: string) => ({ time: 0, text }));
 
       return {
         synced: false,
         wordSynced: false,
         provider: 'lrclib',
-        ttml: writeTtml(lines),
+        ttml: writeTtml(lines, 'en', false),
         lines
       };
     }
@@ -276,11 +276,20 @@ export class LyricsService {
     return lines.sort((a, b) => a.time - b.time);
   }
 
-  private cleanTrackTitle(title: string): string {
-    return title
-      .replace(/^.+?\s*[-–—]\s*/, '')
+  private cleanTrackTitle(title: string, artist?: string): string {
+    let cleaned = title;
+    // Only strip "Artist - Title" prefix when separated by whitespace around the dash
+    const dashParts = cleaned.split(/\s+[-–—]\s+/);
+    if (dashParts.length > 1) {
+      const prefix = dashParts[0].trim().toLowerCase();
+      const targetArtist = (artist || '').trim().toLowerCase();
+      if (targetArtist && (prefix.includes(targetArtist) || targetArtist.includes(prefix))) {
+        cleaned = dashParts.slice(1).join(' - ');
+      }
+    }
+    return cleaned
       .replace(
-        /\s*[\(\[](?:feat|ft|official|audio|video|lyrics|lyric video|remix|hd|4k|visualizer|acoustic)[^\)\]]*[\)\]]/gi,
+        /\s*[\(\[](?:feat|ft|official|audio|video|lyrics|lyric video|remix|hd|4k|visualizer|acoustic|remastered|live)[^\)\]]*[\)\]]/gi,
         ''
       )
       .trim();

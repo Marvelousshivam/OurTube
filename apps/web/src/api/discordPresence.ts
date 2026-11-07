@@ -119,14 +119,20 @@ class DiscordPresenceManager {
     // Send payload to companion bridge if connected
     if (bridgeClient.getIsAvailable()) {
       try {
-        bridgeClient.sendRequest('KODA_BRIDGE_DISCORD' as any, payload).catch(() => {});
+        bridgeClient
+          .sendRequest('KODA_BRIDGE_DISCORD', payload)
+          .then(() => {
+            settings.setDiscordStatus('broadcasting');
+          })
+          .catch(() => {
+            settings.setDiscordStatus('idle');
+          });
       } catch (err) {
-        // Silently handle if bridge doesn't support discord RPC yet
+        settings.setDiscordStatus('idle');
       }
+    } else {
+      settings.setDiscordStatus('idle');
     }
-
-    // Update settings store status
-    settings.setDiscordStatus('broadcasting');
   }
 
   private clearPresence() {

@@ -171,7 +171,8 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
     const formats: any[] = res.data?.streamingData?.formats || [];
 
     // Parse all available audio tracks using Koda's xtags & audioTrack model
-    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptiveFormats);
+    const audioPref = payload.audioQuality || 'high';
+    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptiveFormats, audioPref);
     
     // Select the requested track, or the original soundtrack by default
     let selectedTrack: YouTubeAudioTrackOption | undefined;
@@ -184,13 +185,21 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
 
     const audioFormats = adaptiveFormats
       .filter((f) => f.mimeType && f.mimeType.startsWith('audio/') && f.url)
-      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+      .sort((a, b) =>
+        audioPref === 'low'
+          ? (a.bitrate || 0) - (b.bitrate || 0)
+          : (b.bitrate || 0) - (a.bitrate || 0)
+      );
+
+    const preferredAudioFormat =
+      audioPref === 'normal' && audioFormats.length > 1
+        ? audioFormats[Math.floor(audioFormats.length / 2)]
+        : audioFormats.find((f) => f.mimeType.includes('mp4a')) || audioFormats[0];
 
     // Fallback best audio if audioTracks was empty
     let bestAudio =
       (selectedTrack?.url ? { url: selectedTrack.url, bitrate: selectedTrack.bitrate, mimeType: 'audio/mp4' } : null) ||
-      audioFormats.find((f) => f.mimeType.includes('mp4a')) ||
-      audioFormats[0] ||
+      preferredAudioFormat ||
       formats.find((f) => f.url);
 
     let bestVideo: any = null;
@@ -250,7 +259,8 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
 
     // Try extracting audio tracks from fallback formats
     const adaptive = (info.streaming_data?.adaptive_formats || []) as any[];
-    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptive);
+    const audioPref = payload.audioQuality || 'high';
+    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptive, audioPref);
     let selectedTrack: YouTubeAudioTrackOption | undefined;
     if (payload.audioTrackId) {
       selectedTrack = audioTracks.find((t) => t.id === payload.audioTrackId);
@@ -258,6 +268,22 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
     if (!selectedTrack) {
       selectedTrack = audioTracks.find((t) => t.isOriginal) || audioTracks[0];
     }
+
+    // Decipher URLs for audioTracks if needed
+    for (const track of audioTracks) {
+      if (!track.url) {
+        const rawFmt = adaptive.find(
+          (f) => ((f.audioTrack || f.audio_track)?.id || 'default') === track.id
+        );
+        if (rawFmt && typeof rawFmt.decipher === 'function') {
+          try {
+            track.url = await rawFmt.decipher(yt.session.player);
+          } catch {}
+        }
+      }
+    }
+
+    const ytAudioQuality = audioPref === 'low' ? 'efficiency' : 'best';
 
     if (payload.mode === 'video') {
       let chosenVideoFormat: any = null;
@@ -276,18 +302,18 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
       if (!chosenVideoFormat) {
         try {
           chosenVideoFormat = info.chooseFormat({ type: 'video', quality: payload.quality || 'best' });
-          chosenAudioFormat = info.chooseFormat({ type: 'audio', quality: 'best' });
+          chosenAudioFormat = info.chooseFormat({ type: 'audio', quality: ytAudioQuality });
         } catch {}
       }
 
       const videoUrl = chosenVideoFormat ? await chosenVideoFormat.decipher(yt.session.player) : undefined;
-      const audioUrl = chosenAudioFormat ? await chosenAudioFormat.decipher(yt.session.player) : undefined;
+      const audioUrl = selectedTrack?.url || (chosenAudioFormat ? await chosenAudioFormat.decipher(yt.session.player) : undefined);
 
       if (videoUrl) {
         return {
           audioUrl: audioUrl || videoUrl,
           videoUrl,
-          audioBitrate: chosenAudioFormat?.bitrate,
+          audioBitrate: selectedTrack?.bitrate || chosenAudioFormat?.bitrate,
           videoQuality: chosenVideoFormat?.quality_label || (chosenVideoFormat?.height ? `${chosenVideoFormat.height}p` : undefined),
           expiresInSeconds: 21600,
           format: chosenVideoFormat?.mime_type,
@@ -297,14 +323,14 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
       }
     } else {
       // Audio / Music Mode
-      const audio = info.chooseFormat({ type: 'audio', quality: 'best' });
-      const audioUrl = audio ? await audio.decipher(yt.session.player) : undefined;
+      const audio = info.chooseFormat({ type: 'audio', quality: ytAudioQuality });
+      const audioUrl = selectedTrack?.url || (audio ? await audio.decipher(yt.session.player) : undefined);
 
       if (audioUrl) {
         return {
           audioUrl,
           videoUrl: undefined,
-          audioBitrate: audio?.bitrate,
+          audioBitrate: selectedTrack?.bitrate || audio?.bitrate,
           videoQuality: undefined,
           expiresInSeconds: 21600,
           format: audio?.mime_type,

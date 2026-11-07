@@ -155,6 +155,20 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           break;
         }
 
+        case 'OURTUBE_BRIDGE_DISCORD' as any:
+        case 'KODA_BRIDGE_DISCORD': {
+          // Acknowledge Discord Rich Presence relay payload cleanly
+          const response: BridgeResponse = {
+            channel: resChannel,
+            id: message.id,
+            type: message.type,
+            success: true,
+            data: { acknowledged: true, activity: message.payload?.activity || null }
+          };
+          sendResponse(response);
+          break;
+        }
+
         default:
           sendResponse({
             channel: resChannel,

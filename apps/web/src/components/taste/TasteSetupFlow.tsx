@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTasteStore } from '../../store/tasteStore';
+import { artistPhotoService } from '../../api/artistPhotoService';
 
 type TasteStep = 'ARTISTS' | 'GENRES' | 'DECK' | 'DONE';
 
@@ -45,31 +46,31 @@ interface DeckCardItem {
 
 const SAMPLE_DECK: DeckCardItem[] = [
   {
-    id: 's1',
-    title: 'Barkha',
-    artist: 'Arijit Singh & Irshad Kamil',
-    coverUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=500&h=500&fit=crop',
+    id: 'IJq0yyWug1k',
+    title: 'Tum Hi Ho',
+    artist: 'Arijit Singh',
+    coverUrl: 'https://i.ytimg.com/vi/IJq0yyWug1k/hqdefault.jpg',
     reason: 'Matches your taste for Arijit Singh'
   },
   {
-    id: 's2',
+    id: '34Na4j8AVgA',
     title: 'Starboy',
-    artist: 'The Weeknd & Daft Punk',
-    coverUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&h=500&fit=crop',
+    artist: 'The Weeknd ft. Daft Punk',
+    coverUrl: 'https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg',
     reason: 'Popular in R&B & Synth-Pop'
   },
   {
-    id: 's3',
+    id: 'mH_LFkWxpI0',
     title: 'Lover',
     artist: 'Diljit Dosanjh',
-    coverUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&h=500&fit=crop',
+    coverUrl: 'https://i.ytimg.com/vi/mH_LFkWxpI0/hqdefault.jpg',
     reason: 'Trending in Punjabi Pop'
   },
   {
-    id: 's4',
+    id: 'JQbjS0_ZfJ0',
     title: 'All The Stars',
     artist: 'Kendrick Lamar & SZA',
-    coverUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=500&h=500&fit=crop',
+    coverUrl: 'https://i.ytimg.com/vi/JQbjS0_ZfJ0/hqdefault.jpg',
     reason: 'Award winning Hip-Hop collaboration'
   }
 ];
@@ -78,6 +79,7 @@ export const TasteSetupFlow: React.FC<TasteSetupFlowProps> = ({ onClose }) => {
   const [step, setStep] = useState<TasteStep>('ARTISTS');
   const [searchQuery, setSearchQuery] = useState('');
   const [deckIndex, setDeckIndex] = useState(0);
+  const [, setPhotoTick] = useState(0);
 
   const {
     pickedArtists,
@@ -85,8 +87,16 @@ export const TasteSetupFlow: React.FC<TasteSetupFlowProps> = ({ onClose }) => {
     togglePickedArtist,
     togglePickedGenre,
     recordDeckVerdict,
-    setTasteSetupCompleted
+    setTasteSetupCompleted,
+    isLiked,
+    toggleLikeTrack
   } = useTasteStore();
+
+  useEffect(() => {
+    const unsub = artistPhotoService.subscribe(() => setPhotoTick((t) => t + 1));
+    artistPhotoService.batchResolve(DEFAULT_ARTISTS.map((a) => a.name));
+    return () => unsub();
+  }, []);
 
   const handleNextStep = () => {
     if (step === 'ARTISTS') setStep('GENRES');
@@ -103,6 +113,16 @@ export const TasteSetupFlow: React.FC<TasteSetupFlowProps> = ({ onClose }) => {
     const card = SAMPLE_DECK[deckIndex];
     if (card) {
       recordDeckVerdict(card.id, verdict);
+      if ((verdict === 'YES' || verdict === 'LOVE') && !isLiked(card.id)) {
+        toggleLikeTrack({
+          id: card.id,
+          title: card.title,
+          artist: card.artist,
+          duration: 220,
+          thumbnailUrl: card.coverUrl,
+          highResThumbnailUrl: card.coverUrl
+        });
+      }
     }
     if (deckIndex + 1 < SAMPLE_DECK.length) {
       setDeckIndex(deckIndex + 1);
@@ -275,8 +295,9 @@ export const TasteSetupFlow: React.FC<TasteSetupFlowProps> = ({ onClose }) => {
                       }}
                     >
                       <img
-                        src={artist.photoUrl}
+                        src={artistPhotoService.getCachedPhoto(artist.name) || artist.photoUrl}
                         alt={artist.name}
+                        referrerPolicy="no-referrer"
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                       {isSelected && (

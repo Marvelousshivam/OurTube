@@ -8,12 +8,12 @@ const clock = (sec: number) => (Math.max(0, sec)).toFixed(3);
 /**
  * Writes lyric lines into the standard Apple Music TTML format (<tt>) that <am-lyrics> reads.
  */
-export function writeTtml(lines: LyricsLine[], language = 'en'): string {
+export function writeTtml(lines: LyricsLine[], language = 'en', isSynced?: boolean): string {
   if (!lines || lines.length === 0) {
     return `<tt xmlns="http://www.w3.org/ns/ttml" xml:lang="${escape(language)}"><body><div></div></body></tt>`;
   }
 
-  const timed = lines.some((l) => l.time > 0);
+  const timed = isSynced !== undefined ? isSynced : lines.some((l) => l.time > 0);
 
   const paragraphs = lines.map((l, index) => {
     if (!timed) return `<p>${escape(l.text)}</p>`;

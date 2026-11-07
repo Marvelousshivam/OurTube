@@ -10,6 +10,8 @@ import {
 import { innertubeService } from '../api/innertubeService';
 import { VideoCard } from '../components/video/VideoCard';
 import { VideoCardSkeleton } from '../components/video/VideoCardSkeleton';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTasteStore } from '../store/tasteStore';
 
 export interface VideoSearchPageProps {
   onPlayVideo: (video: VideoItem) => void;
@@ -30,6 +32,7 @@ function getSavedRecentSearches(): string[] {
 function saveRecentSearch(query: string) {
   const clean = query.trim();
   if (!clean) return;
+  if (useSettingsStore.getState().incognitoSession) return;
   const current = getSavedRecentSearches().filter((q) => q.toLowerCase() !== clean.toLowerCase());
   const updated = [clean, ...current].slice(0, 10);
   localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
@@ -94,9 +97,7 @@ export const VideoSearchPage: React.FC<VideoSearchPageProps> = ({
 
   // Recent searches
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-
-  // Subscribed channels map (for subscribe toggle)
-  const [subscribedChannelsMap, setSubscribedChannelsMap] = useState<Record<string, boolean>>({});
+  const { isChannelSubscribed, toggleSubscribeChannel } = useTasteStore();
 
   // Input ref
   const inputRef = useRef<HTMLInputElement>(null);
@@ -303,11 +304,12 @@ export const VideoSearchPage: React.FC<VideoSearchPageProps> = ({
     onPlayVideo(directVideo);
   };
 
-  const toggleChannelSubscribe = (channelId: string) => {
-    setSubscribedChannelsMap((prev) => ({
-      ...prev,
-      [channelId]: !prev[channelId]
-    }));
+  const toggleChannelSubscribe = (channel: SubscribedChannel) => {
+    toggleSubscribeChannel({
+      id: channel.id,
+      name: channel.name,
+      avatarUrl: channel.avatarUrl
+    });
   };
 
   return (
@@ -719,7 +721,7 @@ export const VideoSearchPage: React.FC<VideoSearchPageProps> = ({
                   }}
                 >
                   {channels.map((channel) => {
-                    const isSubscribed = Boolean(subscribedChannelsMap[channel.id]);
+                    const isSubscribed = isChannelSubscribed(channel.id || channel.name);
                     return (
                       <div
                         key={channel.id}
@@ -788,7 +790,7 @@ export const VideoSearchPage: React.FC<VideoSearchPageProps> = ({
                         {/* Subscribe Button */}
                         <button
                           type="button"
-                          onClick={() => toggleChannelSubscribe(channel.id)}
+                          onClick={() => toggleChannelSubscribe(channel)}
                           style={{
                             padding: '7px 16px',
                             borderRadius: '12px',

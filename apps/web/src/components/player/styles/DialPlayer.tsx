@@ -512,6 +512,40 @@ export const DialPlayer: React.FC<DialPlayerProps> = ({
               skip_next
             </span>
           </button>
+
+          {/* Lyrics Button */}
+          <button
+            onClick={onOpenLyrics}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--md-sys-color-outline)',
+              padding: '6px'
+            }}
+            title="Lyrics"
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+              lyrics
+            </span>
+          </button>
+
+          {/* Queue Button */}
+          <button
+            onClick={onOpenQueue}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--md-sys-color-outline)',
+              padding: '6px'
+            }}
+            title="Up Next Queue"
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+              queue_music
+            </span>
+          </button>
         </div>
       </div>
 

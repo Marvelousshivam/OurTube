@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayerStore } from '../../store/playerStore';
 import { useTasteStore } from '../../store/tasteStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { VideoPlayerView } from './VideoPlayerView';
 import { LyricsSheet } from '../lyrics/LyricsSheet';
 import { QueueSheet } from '../queue/QueueSheet';
@@ -46,6 +47,7 @@ export const ExpandedPlayer: React.FC = () => {
   } = usePlayerStore();
 
   const { isLiked, toggleLikeTrack } = useTasteStore();
+  const { ambientIntensity, reduceMotion } = useSettingsStore();
   const [isStylePickerOpen, setIsStylePickerOpen] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [desktopSideTab, setDesktopSideTab] = useState<'lyrics' | 'queue' | 'stats'>('lyrics');
@@ -316,11 +318,15 @@ export const ExpandedPlayer: React.FC = () => {
             currentTime={currentTime}
             duration={duration}
             isLiked={liked}
+            repeatMode={repeatMode}
+            isShuffled={isShuffled}
             onTogglePlay={togglePlay}
             onSeek={seek}
             onNext={nextTrack}
             onPrev={prevTrack}
             onToggleLike={() => toggleLikeTrack(currentTrack)}
+            onToggleRepeat={toggleRepeat}
+            onToggleShuffle={toggleShuffle}
             onOpenLyrics={openLyricsTab}
             onOpenQueue={openQueueTab}
           />
@@ -370,8 +376,8 @@ export const ExpandedPlayer: React.FC = () => {
       {/* Chromatic Mist Ambient Background Engine */}
       <ChromaticMistCanvas
         artworkUrl={currentTrack.highResThumbnailUrl || currentTrack.thumbnailUrl}
-        enabled={ambientBackground}
-        opacity={0.55}
+        enabled={ambientBackground && !reduceMotion}
+        opacity={Math.max(0.15, Math.min(0.95, ambientIntensity * 0.75))}
       />
 
       {/* Top Header Bar: Clean, minimalist Koda-inspired chrome; NO slop, NO redundant buttons */}

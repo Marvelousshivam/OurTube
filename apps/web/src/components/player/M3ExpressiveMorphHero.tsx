@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useId } from 'react';
 import { sizedArtwork } from '../../api/artworkService';
+import { useSettingsStore } from '../../store/settingsStore';
 
 interface M3ExpressiveMorphHeroProps {
   artworkUrl: string | null | undefined;
@@ -92,6 +93,8 @@ export const M3ExpressiveMorphHero: React.FC<M3ExpressiveMorphHeroProps> = ({
   style
 }) => {
   const clipId = `m3-morph-clip-${useId().replace(/:/g, '')}`;
+  const reduceMotion = useSettingsStore((s) => s.reduceMotion);
+  const animateMorph = isPlaying && !reduceMotion;
 
   // Radii states for smooth continuous morphing
   const currentRadiiRef = useRef<number[]>([...(isPlaying ? SHAPE_SETS[0] : CIRCLE_SET)]);
@@ -135,7 +138,7 @@ export const M3ExpressiveMorphHero: React.FC<M3ExpressiveMorphHeroProps> = ({
     transitionStartRef.current = performance.now();
     isHoldingRef.current = false;
 
-    if (isPlaying) {
+    if (animateMorph) {
       setWaveAmp(4.5);
       const nextIdx = (shapeIndexRef.current + 1) % SHAPE_SETS.length;
       shapeIndexRef.current = nextIdx;
@@ -144,9 +147,9 @@ export const M3ExpressiveMorphHero: React.FC<M3ExpressiveMorphHeroProps> = ({
       setWaveAmp(0);
       targetRadiiRef.current = CIRCLE_SET;
     }
-  }, [isPlaying]);
+  }, [animateMorph]);
 
-  // High-performance animation frame loop: 2.2s morph + 1.2s showcase hold
+  // High-performance animation frame loop: 2.2s morph + 1.2s showcase hold (halts cleanly when paused or reduceMotion)
   useEffect(() => {
     let animId: number;
     const morphDuration = 2200; // 2.2s morph
@@ -155,15 +158,19 @@ export const M3ExpressiveMorphHero: React.FC<M3ExpressiveMorphHeroProps> = ({
     const tick = (now: number) => {
       if (isHoldingRef.current) {
         if (now - holdStartRef.current >= holdDuration) {
-          if (isPlaying) {
+          if (animateMorph) {
             isHoldingRef.current = false;
             shapeIndexRef.current = (shapeIndexRef.current + 1) % SHAPE_SETS.length;
             fromRadiiRef.current = [...targetRadiiRef.current];
             targetRadiiRef.current = SHAPE_SETS[shapeIndexRef.current];
             transitionStartRef.current = now;
+          } else {
+            return;
           }
         }
-        animId = requestAnimationFrame(tick);
+        if (animateMorph) {
+          animId = requestAnimationFrame(tick);
+        }
         return;
       }
 
@@ -182,10 +189,13 @@ export const M3ExpressiveMorphHero: React.FC<M3ExpressiveMorphHeroProps> = ({
       setMorphPathD(buildCubicSvgPath(current));
 
       if (rawProgress >= 1) {
-        if (isPlaying) {
+        if (animateMorph) {
           isHoldingRef.current = true;
           holdStartRef.current = now;
+          animId = requestAnimationFrame(tick);
         }
+        // When paused or reduceMotion, stop rAF loop once settled back to circle!
+        return;
       }
 
       animId = requestAnimationFrame(tick);
@@ -193,7 +203,7 @@ export const M3ExpressiveMorphHero: React.FC<M3ExpressiveMorphHeroProps> = ({
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying]);
+  }, [animateMorph]);
 
   return (
     <div
@@ -281,7 +291,9 @@ export const M3ExpressiveMorphHero: React.FC<M3ExpressiveMorphHeroProps> = ({
           <g
             style={{
               transformOrigin: '150px 150px',
-              animation: isPlaying
+              animation: reduceMotion
+                ? 'none'
+                : isPlaying
                 ? 'm3HeroBreathLive 3.6s ease-in-out infinite'
                 : 'm3RestingPulseLive 4s ease-in-out infinite',
               transition: 'transform 600ms cubic-bezier(0.2, 0, 0, 1)'

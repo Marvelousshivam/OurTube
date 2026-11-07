@@ -329,47 +329,33 @@ export async function discoverAccounts(): Promise<{ accounts: YtAccount[]; webIn
       const avatar = guide ? extractPhoto(guide) : null;
       const headers = findRenderers(guide, 'activeAccountHeaderRenderer');
       const header = headers[0];
-      const parsedName = header ? extractText(header.accountName) : 'Shivam Raj';
-      const parsedHandle = header ? extractText(header.channelHandle) : '@shivamraj6577';
+      const parsedName = header ? extractText(header.accountName) : null;
+      const parsedHandle = header ? extractText(header.channelHandle) : null;
       const parsedEmail = header ? extractText(header.email) : null;
 
-      accounts.push({
-        authUser: '0',
-        name: parsedName || 'Shivam Raj',
-        email: parsedEmail,
-        avatarUrl: avatar,
-        channels: [
-          {
-            id: '0:own',
-            name: parsedName || 'Shivam Raj',
-            handle: parsedHandle || '@shivamraj6577',
-            avatarUrl: avatar,
-            brand: false,
-            authUser: '0',
-            pageId: null,
-            selectedOnWeb: true
-          }
-        ]
-      });
+      if (parsedName || avatar) {
+        const displayName = parsedName || 'YouTube Account';
+        accounts.push({
+          authUser: '0',
+          name: displayName,
+          email: parsedEmail,
+          avatarUrl: avatar,
+          channels: [
+            {
+              id: '0:own',
+              name: displayName,
+              handle: parsedHandle || null,
+              avatarUrl: avatar,
+              brand: false,
+              authUser: '0',
+              pageId: null,
+              selectedOnWeb: true
+            }
+          ]
+        });
+      }
     } catch {
-      accounts.push({
-        authUser: '0',
-        name: 'Shivam Raj',
-        email: 'shivamraj6577@gmail.com',
-        avatarUrl: null,
-        channels: [
-          {
-            id: '0:own',
-            name: 'Shivam Raj',
-            handle: '@shivamraj6577',
-            avatarUrl: null,
-            brand: false,
-            authUser: '0',
-            pageId: null,
-            selectedOnWeb: true
-          }
-        ]
-      });
+      // Unauthenticated or unreachable session
     }
   }
 
@@ -383,67 +369,38 @@ export async function getAuthState(forceRefresh: boolean = false): Promise<AuthS
   }
 
   const secret = await getSigningSecret();
-
-  const primaryUserChannel: YtChannel = {
-    id: '0:own',
-    name: 'Shivam Raj',
-    handle: '@shivamraj6577',
-    avatarUrl: null,
-    brand: false,
-    authUser: '0',
-    pageId: null,
-    selectedOnWeb: true
-  };
-
-  const primaryAccount: YtAccount = {
-    authUser: '0',
-    name: 'Shivam Raj',
-    email: 'shivamraj6577@gmail.com',
-    avatarUrl: null,
-    channels: [primaryUserChannel]
-  };
-
-  const secondaryUserChannel: YtChannel = {
-    id: '1:own',
-    name: 'Secondary Google Account',
-    handle: '@google.account2',
-    avatarUrl: null,
-    brand: false,
-    authUser: '1',
-    pageId: null,
-    selectedOnWeb: false
-  };
-
-  const secondaryAccount: YtAccount = {
-    authUser: '1',
-    name: 'Secondary Google Account',
-    email: 'account2@gmail.com',
-    avatarUrl: null,
-    channels: [secondaryUserChannel]
-  };
-
   const selectedChannelId = await getSelectedChannelId();
 
   if (!secret) {
-    const isSecondary = selectedChannelId?.startsWith('1:');
-    const selectedChannel = isSecondary ? secondaryUserChannel : primaryUserChannel;
-
     return {
-      isAuthenticated: true,
-      accounts: [primaryAccount, secondaryAccount],
-      selectedChannelId: selectedChannel.id,
-      selectedChannel
+      isAuthenticated: false,
+      accounts: [],
+      selectedChannelId: null,
+      selectedChannel: null
     };
   }
 
   const sapisidHash = await calculateSapisidHash(secret, MUSIC_ORIGIN);
-  let { accounts, webIndex } = await discoverAccounts();
+  const { accounts, webIndex } = await discoverAccounts();
 
-  // If YouTube only returned 1 account, ensure secondary account slot is available for multi-login switching
-  if (accounts.length === 1) {
-    accounts.push(secondaryAccount);
-  } else if (accounts.length === 0) {
-    accounts = [primaryAccount, secondaryAccount];
+  if (accounts.length === 0) {
+    const fallbackChannel: YtChannel = {
+      id: '0:own',
+      name: 'YouTube Session',
+      handle: null,
+      avatarUrl: null,
+      brand: false,
+      authUser: '0',
+      pageId: null,
+      selectedOnWeb: true
+    };
+    accounts.push({
+      authUser: '0',
+      name: 'YouTube Session',
+      email: null,
+      avatarUrl: null,
+      channels: [fallbackChannel]
+    });
   }
 
   const allChannels = accounts.flatMap((a) => a.channels);

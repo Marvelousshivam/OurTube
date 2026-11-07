@@ -1,5 +1,6 @@
 import React from 'react';
 import { COLOR_TOKENS, SHAPES } from '../tokens';
+import { handleArtworkError } from '../../api/artworkService';
 
 export interface DSAvatarProps {
   name: string;
@@ -90,6 +91,8 @@ export const DSAvatar: React.FC<DSAvatarProps> = ({
           <img
             src={imageUrl}
             alt={name}
+            referrerPolicy="no-referrer"
+            onError={(e) => handleArtworkError(e, imageUrl)}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             loading="lazy"
           />

@@ -2,10 +2,11 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { innertubeService, HomeSection, UserPlaylist } from '../api/innertubeService';
 import { usePlayerStore } from '../store/playerStore';
 import { useTasteStore } from '../store/tasteStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { bridgeClient } from '../api/bridgeClient';
 import { TrackMetadata, AuthState } from '../types';
 import { artistPhotoService } from '../api/artistPhotoService';
-import { sizedArtwork } from '../api/artworkService';
+import { sizedArtwork, handleArtworkError } from '../api/artworkService';
 import { YourMixHero } from '../components/home/YourMixHero';
 import {
   COLOR_TOKENS,
@@ -33,6 +34,18 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
 
   const { playTrack, currentTrack, isPlaying } = usePlayerStore();
   const { history, likedTracks, isLiked, toggleLikeTrack } = useTasteStore();
+  const { homeLayoutMode, filterExplicit } = useSettingsStore();
+
+  const rawSections = sections;
+  const filteredSections = useMemo(() => {
+    if (!filterExplicit) return rawSections;
+    return rawSections
+      .map((s) => ({
+        ...s,
+        items: s.items.filter((item) => !item.isExplicit)
+      }))
+      .filter((s) => s.items.length > 0);
+  }, [rawSections, filterExplicit]);
 
   const loadFeed = () => {
     setLoading(true);
@@ -224,22 +237,22 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
 
   // Extract recent albums / collections from shelves (only if at least 3)
   const recentAlbums = useMemo(() => {
-    for (const s of sections) {
+    for (const s of filteredSections) {
       if (/album|release|record|collection/i.test(s.title)) {
         return s.items.length >= 3 ? s.items.slice(0, 10) : [];
       }
     }
-    return sections.length > 1 && sections[1].items.length >= 3 ? sections[1].items.slice(0, 10) : [];
-  }, [sections]);
+    return filteredSections.length > 1 && filteredSections[1].items.length >= 3 ? filteredSections[1].items.slice(0, 10) : [];
+  }, [filteredSections]);
 
   // Extract tracks for "Jump back in"
   const jumpBackInTracks = useMemo(() => {
-    if (sections.length > 0) {
-      const lastSection = sections[sections.length - 1];
+    if (filteredSections.length > 0) {
+      const lastSection = filteredSections[filteredSections.length - 1];
       if (lastSection.items.length > 0) return lastSection.items.slice(0, 8);
     }
-    return mixTracks.slice(0, 8);
-  }, [sections, mixTracks]);
+    return filterExplicit ? mixTracks.filter((t) => !t.isExplicit).slice(0, 8) : mixTracks.slice(0, 8);
+  }, [filteredSections, mixTracks, filterExplicit]);
 
   const handleCardClick = async (track: TrackMetadata, currentSectionItems: TrackMetadata[]) => {
     if (track.id.startsWith('playlist_')) {
@@ -274,10 +287,10 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
         width: '100%'
       }}
     >
-      {/* 1. Signature Koda "Your Mix" Organic Collage Hero */}
-      {mixTracks.length > 0 && (
+      {/* 1. Signature Koda "Your Mix" Organic Collage Hero (Spotlight Layout Mode) */}
+      {mixTracks.length > 0 && homeLayoutMode === 'spotlight' && (
         <YourMixHero
-          tracks={mixTracks}
+          tracks={filterExplicit ? mixTracks.filter((t) => !t.isExplicit) : mixTracks}
           title={isPersonalMix ? 'Your\nMix' : 'Discover\nMix'}
           onPlayMix={(t) => playTrack(t[0], t)}
           onTrackClick={(t) => playTrack(t, mixTracks)}
@@ -352,9 +365,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                     }}
                   >
                     <img
-                      src={track.highResThumbnailUrl || track.thumbnailUrl}
+                      src={sizedArtwork(track.thumbnailUrl || track.highResThumbnailUrl, 300)}
                       alt={track.title}
                       loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => handleArtworkError(e, track.thumbnailUrl)}
                       style={{
                         width: '100%',
                         height: '100%',
@@ -476,9 +491,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                   }}
                 >
                   <img
-                    src={sizedArtwork(item.highResThumbnailUrl || item.thumbnailUrl, 500)}
+                    src={sizedArtwork(item.thumbnailUrl || item.highResThumbnailUrl, 300)}
                     alt={item.title}
                     loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handleArtworkError(e, item.thumbnailUrl)}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 </div>
@@ -732,9 +749,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                 }}
               >
                 <img
-                  src={sizedArtwork(pl.imageUrl, 400)}
+                  src={sizedArtwork(pl.imageUrl, 300)}
                   alt={pl.title}
                   loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => handleArtworkError(e, pl.imageUrl)}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               </div>
@@ -950,9 +969,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
                   }}
                 >
                   <img
-                    src={sizedArtwork(item.highResThumbnailUrl || item.thumbnailUrl, 500)}
+                    src={sizedArtwork(item.thumbnailUrl || item.highResThumbnailUrl, 300)}
                     alt={item.title}
                     loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => handleArtworkError(e, item.thumbnailUrl)}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 </div>
@@ -1004,7 +1025,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenPlaylist, onOpenArtist
       )}
 
       {/* 7. Additional Personalized Shelves from YouTube Music */}
-      {sections.slice(2).map((section, sIdx) => (
+      {filteredSections.slice(2).map((section, sIdx) => (
         <section key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h2

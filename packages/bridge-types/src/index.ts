@@ -7,7 +7,8 @@ export type BridgeMessageType =
   | 'KODA_BRIDGE_FETCH'
   | 'KODA_BRIDGE_STREAM_URL'
   | 'KODA_BRIDGE_COOKIE_SYNC'
-  | 'KODA_BRIDGE_SCRAPE_HOME';
+  | 'KODA_BRIDGE_SCRAPE_HOME'
+  | 'KODA_BRIDGE_DISCORD';
 
 export type BridgeRequestChannel = 'OURTUBE_BRIDGE_REQ' | 'KODA_BRIDGE_REQ';
 export type BridgeResponseChannel = 'OURTUBE_BRIDGE_RES' | 'KODA_BRIDGE_RES';
@@ -84,6 +85,7 @@ export interface YouTubeAudioTrackOption {
 export interface StreamResolutionRequest {
   videoId: string;
   quality?: 'auto' | '1080p' | '720p' | '480p' | '360p';
+  audioQuality?: 'high' | 'normal' | 'low';
   mode?: 'music' | 'video';
   audioTrackId?: string;
 }
@@ -192,14 +194,20 @@ export function decodeYouTubeXtags(xtags?: string | null): Record<string, string
   }
 }
 
-export function parseAudioTracksFromAdaptiveFormats(adaptiveFormats: any[]): YouTubeAudioTrackOption[] {
+export function parseAudioTracksFromAdaptiveFormats(
+  adaptiveFormats: any[],
+  audioQuality: 'high' | 'normal' | 'low' = 'high'
+): YouTubeAudioTrackOption[] {
   if (!Array.isArray(adaptiveFormats)) return [];
   const byTrack = new Map<string, any[]>();
 
   for (const f of adaptiveFormats) {
-    if (!f.mimeType || !f.mimeType.startsWith('audio/')) continue;
-    if (!f.url || f.isDrc) continue;
-    const trackId = f.audioTrack?.id || 'default';
+    const mimeType = f.mimeType || f.mime_type;
+    if (!mimeType || !mimeType.startsWith('audio/')) continue;
+    const isDrc = Boolean(f.isDrc || f.is_drc);
+    if (!f.url || isDrc) continue;
+    const audioTrackObj = f.audioTrack || f.audio_track;
+    const trackId = audioTrackObj?.id || audioTrackObj?.audio_track_id || 'default';
     if (!byTrack.has(trackId)) {
       byTrack.set(trackId, []);
     }
@@ -209,20 +217,36 @@ export function parseAudioTracksFromAdaptiveFormats(adaptiveFormats: any[]): You
   const tracks: YouTubeAudioTrackOption[] = [];
 
   for (const [id, formats] of byTrack.entries()) {
-    // Pick best format: AAC first, then higher bitrate
-    const best = formats.sort((a, b) => {
-      const aIsAac = (a.mimeType || '').includes('mp4a') ? 1 : 0;
-      const bIsAac = (b.mimeType || '').includes('mp4a') ? 1 : 0;
+    // Pick format based on audioQuality preference (AAC preferred for compatibility)
+    const sorted = [...formats].sort((a, b) => {
+      const aMime = a.mimeType || a.mime_type || '';
+      const bMime = b.mimeType || b.mime_type || '';
+      const aIsAac = aMime.includes('mp4a') ? 1 : 0;
+      const bIsAac = bMime.includes('mp4a') ? 1 : 0;
       if (bIsAac !== aIsAac) return bIsAac - aIsAac;
+      if (audioQuality === 'low') {
+        return (a.bitrate || 0) - (b.bitrate || 0);
+      }
       return (b.bitrate || 0) - (a.bitrate || 0);
-    })[0];
+    });
+
+    const best =
+      audioQuality === 'normal' && sorted.length > 1
+        ? sorted[Math.floor(sorted.length / 2)]
+        : sorted[0];
 
     if (!best) continue;
 
     const tags = decodeYouTubeXtags(best.xtags);
     const acont = tags['acont'];
-    const rawName = best.audioTrack?.displayName || (id === 'default' ? 'Original' : id);
-    const isDefault = Boolean(best.audioTrack?.audioIsDefault);
+    const audioTrackObj = best.audioTrack || best.audio_track;
+    const rawName =
+      audioTrackObj?.displayName ||
+      audioTrackObj?.display_name ||
+      (id === 'default' ? 'Original' : id);
+    const isDefault = Boolean(
+      audioTrackObj?.audioIsDefault ?? audioTrackObj?.audio_is_default
+    );
     const isOriginal = acont === 'original' || (!acont && isDefault);
     const isAutoDubbed = acont === 'dubbed-auto';
     const lang = tags['lang'] || (id !== 'default' ? id.split('.')[0] : undefined);

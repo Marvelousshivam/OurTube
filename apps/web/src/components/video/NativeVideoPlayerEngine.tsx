@@ -5,6 +5,7 @@ interface NativeVideoPlayerEngineProps {
   className?: string;
   style?: React.CSSProperties;
   onVideoElementReady?: (video: HTMLVideoElement | null) => void;
+  onEnded?: () => void;
 }
 
 /**
@@ -17,10 +18,12 @@ interface NativeVideoPlayerEngineProps {
 export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = ({
   className = '',
   style,
-  onVideoElementReady
+  onVideoElementReady,
+  onEnded
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastVideoIdRef = useRef<string | null>(null);
 
   const {
     currentVideo,
@@ -62,15 +65,39 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
       return;
     }
 
+    const currentVideoId = currentVideo?.id || null;
+    const isSameVideoSwitch =
+      Boolean(currentVideoId && lastVideoIdRef.current === currentVideoId) &&
+      (video.currentTime > 0.5 || usePlayerStore.getState().currentTime > 0.5);
+    const resumeTime = isSameVideoSwitch
+      ? Math.max(video.currentTime || 0, usePlayerStore.getState().currentTime || 0)
+      : 0;
+    lastVideoIdRef.current = currentVideoId;
+
     if (video.src !== streamVideoUrl) {
       video.src = streamVideoUrl;
       video.load();
+      if (resumeTime > 0.5) {
+        const restoreVideoPos = () => {
+          video.currentTime = resumeTime;
+          video.removeEventListener('loadedmetadata', restoreVideoPos);
+        };
+        video.addEventListener('loadedmetadata', restoreVideoPos);
+      }
     }
 
     if (isSeparateAudio && audio && streamAudioUrl) {
       if (audio.src !== streamAudioUrl) {
         audio.src = streamAudioUrl;
         audio.load();
+        const targetAudioPos = resumeTime > 0.5 ? resumeTime : video.currentTime || 0;
+        if (targetAudioPos > 0.5) {
+          const restoreAudioPos = () => {
+            audio.currentTime = targetAudioPos;
+            audio.removeEventListener('loadedmetadata', restoreAudioPos);
+          };
+          audio.addEventListener('loadedmetadata', restoreAudioPos);
+        }
       }
       // When separate audio stream exists, mute video to prevent echo and let audio element produce sound
       video.muted = true;
@@ -153,6 +180,7 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
       const video = videoRef.current;
       const audio = audioRef.current;
       if (!video || !audio || video.paused || audio.paused) return;
+      if (video.readyState < 2 || audio.readyState < 2) return;
 
       const drift = Math.abs(video.currentTime - audio.currentTime);
       if (drift > 0.3) {
@@ -214,6 +242,26 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
         onCanPlay={() => {
           setBuffering(false);
           setVideoPlaybackError(null);
+        }}
+        onEnded={() => {
+          if (isLooping) {
+            const v = videoRef.current;
+            const a = audioRef.current;
+            if (v) {
+              v.currentTime = 0;
+              v.play().catch(() => {});
+            }
+            if (isSeparateAudio && a) {
+              a.currentTime = 0;
+              a.play().catch(() => {});
+            }
+            return;
+          }
+          if (onEnded) {
+            onEnded();
+          } else {
+            usePlayerStore.setState({ isPlaying: false });
+          }
         }}
         onError={(e) => {
           const err = e.currentTarget.error;

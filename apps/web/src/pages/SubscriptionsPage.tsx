@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { VideoItem, SubscribedChannel } from '../types';
 import { innertubeService } from '../api/innertubeService';
+import { useTasteStore } from '../store/tasteStore';
 import { VideoCard } from '../components/video/VideoCard';
 import { VideoCardSkeleton } from '../components/video/VideoCardSkeleton';
 import { CreatorAvatarRail } from '../components/subscriptions/CreatorAvatarRail';
@@ -15,8 +16,24 @@ type TimeFilter = 'all' | 'today' | 'week' | 'unwatched';
 type ViewMode = 'grid' | 'list';
 
 export const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onPlayVideo }) => {
+  const { subscribedChannels: localSubscribedChannels } = useTasteStore();
   const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [channels, setChannels] = useState<SubscribedChannel[]>([]);
+  const [remoteChannels, setChannels] = useState<SubscribedChannel[]>([]);
+  const channels = useMemo(() => {
+    const seen = new Set(remoteChannels.map((c) => c.id.toLowerCase()));
+    const merged: SubscribedChannel[] = [...remoteChannels];
+    for (const lc of localSubscribedChannels) {
+      if (!seen.has(lc.id.toLowerCase()) && !seen.has(lc.name.toLowerCase())) {
+        seen.add(lc.id.toLowerCase());
+        merged.unshift({
+          id: lc.id,
+          name: lc.name,
+          avatarUrl: lc.avatarUrl || ''
+        });
+      }
+    }
+    return merged;
+  }, [remoteChannels, localSubscribedChannels]);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [activeTimeFilter, setActiveTimeFilter] = useState<TimeFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(() => {

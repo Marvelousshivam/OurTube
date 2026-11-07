@@ -1,62 +1,126 @@
 import React, { useEffect, useState } from 'react';
 import { VideoNotification, VideoItem } from '../../types';
-import { bridgeClient } from '../../api/bridgeClient';
+import { useTasteStore } from '../../store/tasteStore';
+import { innertubeService } from '../../api/innertubeService';
 
 interface NotificationsSheetProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectVideo?: (video: Partial<VideoItem>) => void;
+  onUnreadChange?: (hasUnread: boolean) => void;
+}
+
+const READ_NOTIFS_KEY = 'koda_read_notification_ids';
+
+function getReadIds(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(READ_NOTIFS_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveReadIds(ids: Set<string>) {
+  try {
+    localStorage.setItem(READ_NOTIFS_KEY, JSON.stringify([...ids]));
+  } catch {}
 }
 
 export const NotificationsSheet: React.FC<NotificationsSheetProps> = ({
   isOpen,
   onClose,
-  onSelectVideo
+  onSelectVideo,
+  onUnreadChange
 }) => {
   const [notifications, setNotifications] = useState<VideoNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const { followedArtists, subscribedChannels, history, likedTracks } = useTasteStore();
 
   useEffect(() => {
-    if (!isOpen) return;
+    let isCancelled = false;
     setLoading(true);
 
-    // Mock initial notifications with fallback to real InnerTube notification feed if authenticated
-    const timer = setTimeout(() => {
-      setNotifications([
-        {
-          id: 'notif_1',
-          title: 'AVENGERS DOOMSDAY: Latveria Revealed in New Promos!',
-          channelName: 'New Rockstars',
-          channelIconUrl: 'https://yt3.googleusercontent.com/ytc/AIdro_k69V7fKkQ1b8XJ4jG8KkQ1b8XJ4jG8=s88-c-k-c0x00ffffff-no-rj',
-          timeAgo: '2 hours ago',
-          thumbnailUrl: 'https://i.ytimg.com/vi/M7lc1UVf-VE/hqdefault.jpg',
-          videoId: 'M7lc1UVf-VE',
-          read: false
-        },
-        {
-          id: 'notif_2',
-          title: 'Why I hate "deep" quotes (and why you should too)',
-          channelName: 'Unsolicited advice',
-          timeAgo: '9 hours ago',
-          thumbnailUrl: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
-          videoId: 'dQw4w9WgXcQ',
-          read: false
-        },
-        {
-          id: 'notif_3',
-          title: 'Material 3 Expressive Design System Deep Dive',
-          channelName: 'Google Developers',
-          timeAgo: 'Yesterday',
-          thumbnailUrl: 'https://i.ytimg.com/vi/3JZ_D3ELwOQ/hqdefault.jpg',
-          videoId: '3JZ_D3ELwOQ',
-          read: true
-        }
-      ]);
-      setLoading(false);
-    }, 250);
+    const buildNotifications = async () => {
+      const readSet = getReadIds();
+      const items: VideoNotification[] = [];
+      const seenIds = new Set<string>();
 
-    return () => clearTimeout(timer);
-  }, [isOpen]);
+      try {
+        const feed = await innertubeService.getVideoHomeFeed();
+        const subNames = new Set([
+          ...subscribedChannels.map((c) => c.name.toLowerCase()),
+          ...followedArtists.map((a) => a.name.toLowerCase())
+        ]);
+
+        const feedVideos = feed?.videos || [];
+        // Prioritize videos from subscribed channels / followed artists first
+        const prioritized = [
+          ...feedVideos.filter((v) => subNames.has((v.channelName || '').toLowerCase())),
+          ...feedVideos.filter((v) => !subNames.has((v.channelName || '').toLowerCase()))
+        ].slice(0, 6);
+
+        for (const v of prioritized) {
+          if (!v.id || seenIds.has(v.id)) continue;
+          seenIds.add(v.id);
+          const id = `notif_${v.id}`;
+          items.push({
+            id,
+            title: v.title,
+            channelName: v.channelName,
+            channelIconUrl: v.channelIconUrl,
+            timeAgo: v.uploadedDate || 'New release',
+            thumbnailUrl: v.thumbnailUrl,
+            videoId: v.id,
+            read: readSet.has(id)
+          });
+        }
+      } catch {}
+
+      // Supplement from recent listening / liked tracks if feed was empty
+      if (items.length === 0) {
+        const recentSource = [...likedTracks.slice(0, 3), ...history.slice(0, 3).map((h) => ({
+          id: h.trackId,
+          title: h.title,
+          artist: h.artist,
+          thumbnailUrl: h.thumbnailUrl
+        }))];
+        for (const t of recentSource) {
+          if (!t.id || seenIds.has(t.id)) continue;
+          seenIds.add(t.id);
+          const id = `notif_${t.id}`;
+          items.push({
+            id,
+            title: `Recommended from your library: ${t.title}`,
+            channelName: t.artist,
+            timeAgo: 'For you',
+            thumbnailUrl: t.thumbnailUrl,
+            videoId: t.id,
+            read: readSet.has(id)
+          });
+        }
+      }
+
+      if (!isCancelled) {
+        setNotifications(items);
+        setLoading(false);
+        onUnreadChange?.(items.some((n) => !n.read));
+      }
+    };
+
+    buildNotifications();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, followedArtists.length, subscribedChannels.length, history.length, likedTracks.length]);
+
+  const markAllRead = () => {
+    const readSet = getReadIds();
+    notifications.forEach((n) => readSet.add(n.id));
+    saveReadIds(readSet);
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    onUnreadChange?.(false);
+  };
 
   if (!isOpen) return null;
 
@@ -139,26 +203,45 @@ export const NotificationsSheet: React.FC<NotificationsSheetProps> = ({
             </h2>
           </div>
 
-          <button
-            onClick={onClose}
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--md-sys-color-surface-container, rgba(255,255,255,0.06))',
-              border: 'none',
-              color: 'var(--md-sys-color-on-surface-variant)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer'
-            }}
-            title="Close"
-          >
-            <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
-              close
-            </span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {notifications.some((n) => !n.read) && (
+              <button
+                onClick={markAllRead}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '9999px',
+                  backgroundColor: 'var(--md-sys-color-surface-container)',
+                  border: '1px solid var(--md-sys-color-outline-variant)',
+                  color: 'var(--md-sys-color-primary)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Mark all read
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--md-sys-color-surface-container, rgba(255,255,255,0.06))',
+                border: 'none',
+                color: 'var(--md-sys-color-on-surface-variant)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+              title="Close"
+            >
+              <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+                close
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* List */}
@@ -185,6 +268,14 @@ export const NotificationsSheet: React.FC<NotificationsSheetProps> = ({
               <div
                 key={item.id}
                 onClick={() => {
+                  const readSet = getReadIds();
+                  readSet.add(item.id);
+                  saveReadIds(readSet);
+                  setNotifications((prev) => {
+                    const next = prev.map((n) => (n.id === item.id ? { ...n, read: true } : n));
+                    onUnreadChange?.(next.some((n) => !n.read));
+                    return next;
+                  });
                   if (item.videoId && onSelectVideo) {
                     onSelectVideo({
                       id: item.videoId,

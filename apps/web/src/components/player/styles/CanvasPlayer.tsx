@@ -210,6 +210,30 @@ export const CanvasPlayer: React.FC<CanvasPlayerProps> = ({
                 lyrics
               </span>
             </button>
+
+            <button
+              onClick={onOpenQueue}
+              style={{
+                background: 'rgba(255, 255, 255, 0.12)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255, 255, 255, 0.18)',
+                borderRadius: '50%',
+                width: '42px',
+                height: '42px',
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.15s ease'
+              }}
+              title="Up Next Queue"
+            >
+              <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+                queue_music
+              </span>
+            </button>
           </div>
         </div>
 
@@ -274,6 +298,7 @@ export const CanvasPlayer: React.FC<CanvasPlayerProps> = ({
               justifyContent: 'space-between',
               fontSize: '12px',
               fontWeight: 600,
+              fontVariantNumeric: 'tabular-nums',
               color: 'rgba(255, 255, 255, 0.72)',
               letterSpacing: '0.02em',
               textShadow: '0 1px 4px rgba(0,0,0,0.5)'

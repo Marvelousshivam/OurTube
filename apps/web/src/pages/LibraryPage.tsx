@@ -4,7 +4,7 @@ import { usePlayerStore } from '../store/playerStore';
 import { bridgeClient } from '../api/bridgeClient';
 import { innertubeService, UserPlaylist } from '../api/innertubeService';
 import { AuthState, TrackMetadata, VideoItem } from '../types';
-import { sizedArtwork } from '../api/artworkService';
+import { sizedArtwork, handleArtworkError } from '../api/artworkService';
 import { VideoLibraryView } from '../components/library/VideoLibraryView';
 import { SHAPES } from '../design-system/tokens';
 import {
@@ -51,7 +51,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
   const [ytmHistory, setYtmHistory] = useState<TrackMetadata[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const { likedTracks, history, isLiked, toggleLikeTrack } = useTasteStore();
+  const { likedTracks, history, isLiked, toggleLikeTrack, savedPlaylists, followedArtists } = useTasteStore();
   const { playTrack, currentTrack, isPlaying } = usePlayerStore();
 
   const loadPlaylists = () => {
@@ -109,9 +109,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     };
   }, []);
 
-  // Filter out duplicate Liked Music / LM auto-playlist items from secondary grid
+  // Filter out duplicate Liked Music / LM auto-playlist items from secondary grid and merge savedPlaylists
   const deduplicatedPlaylists = useMemo(() => {
-    return userPlaylists.filter((pl) => {
+    const remoteFiltered = userPlaylists.filter((pl) => {
       const idLower = pl.id.toLowerCase();
       const titleLower = pl.title.toLowerCase();
       if (
@@ -125,7 +125,24 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
       }
       return true;
     });
-  }, [userPlaylists]);
+    const seenIds = new Set(remoteFiltered.map((p) => p.id.replace(/^playlist_/, '')));
+    const merged: UserPlaylist[] = [...remoteFiltered];
+    for (const sp of savedPlaylists) {
+      const cleanId = sp.id.replace(/^playlist_/, '');
+      if (!seenIds.has(cleanId)) {
+        seenIds.add(cleanId);
+        merged.unshift({
+          id: sp.id,
+          title: sp.title,
+          subtitle: sp.subtitle || 'Saved Playlist',
+          imageUrl: sp.thumbnailUrl || '',
+          author: sp.subtitle || 'Saved',
+          trackCount: sp.trackCount
+        });
+      }
+    }
+    return merged;
+  }, [userPlaylists, savedPlaylists]);
 
   // Search filtered playlists
   const filteredPlaylists = useMemo(() => {
@@ -151,9 +168,15 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     });
   }, [deduplicatedPlaylists, searchQuery, sortBy]);
 
-  // Deep Artist Aggregation: Combines likedTracks, history, and YTM history
+    // Deep Artist Aggregation: Combines followedArtists, likedTracks, history, and YTM history
   const libraryArtists = useMemo(() => {
     const artistMap = new Map<string, { name: string; trackCount: number; plays: number; imageUrl?: string }>();
+
+    // Explicitly followed artists
+    for (const f of followedArtists) {
+      if (!f.name) continue;
+      artistMap.set(f.name, { name: f.name, trackCount: 2, plays: 2, imageUrl: f.thumbnailUrl });
+    }
 
     // Liked songs
     for (const t of likedTracks) {
@@ -200,7 +223,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
     }
 
     return list;
-  }, [likedTracks, history, ytmHistory, searchQuery]);
+  }, [followedArtists, likedTracks, history, ytmHistory, searchQuery]);
 
   // Combined History (YTM authentic history + local playback history)
   const combinedHistory = useMemo(() => {
@@ -797,6 +820,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                     <img
                       src={sizedArtwork(pl.imageUrl, 100)}
                       alt={pl.title}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => handleArtworkError(e, pl.imageUrl)}
                       style={{ width: '48px', height: '48px', borderRadius: '10px', objectFit: 'cover' }}
                     />
                     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -1043,6 +1068,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({
                     <img
                       src={sizedArtwork(artist.imageUrl, 200)}
                       alt={artist.name}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => handleArtworkError(e, artist.imageUrl)}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       loading="lazy"
                     />

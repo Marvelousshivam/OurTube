@@ -21,7 +21,8 @@ import {
   addToUserQueue,
   clearUpcomingUserQueue,
   extendStation,
-  computeJump
+  computeJump,
+  shuffleUpcomingQueue
 } from '../playback/queueTimeline';
 import { innertubeService } from '../api/innertubeService';
 import { lyricsService } from '../api/lyricsService';
@@ -42,6 +43,8 @@ interface PlayerState {
   isBuffering: boolean;
   repeatMode: RepeatMode;
   isShuffled: boolean;
+  stationMood: string;
+  unshuffledQueue: QueueEntry[] | null;
   queue: QueueEntry[];
   queueIndex: number;
   videoQuality: VideoQuality;
@@ -110,7 +113,7 @@ interface PlayerState {
   clearUserQueue: () => void;
   updatePlaybackProgress: (currentTime: number, duration: number) => void;
   setBuffering: (isBuffering: boolean) => void;
-  loadRadioQueue: (trackId: string) => Promise<void>;
+  loadRadioQueue: (trackId: string, mood?: string) => Promise<void>;
   loadLyricsForTrack: (track: TrackMetadata, reqToken?: number) => Promise<void>;
   preloadUpcomingTracks: (tracks: TrackMetadata[]) => Promise<void>;
 }
@@ -126,9 +129,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isBuffering: false,
   repeatMode: 'off',
   isShuffled: false,
+  stationMood: 'All',
+  unshuffledQueue: null,
   queue: [],
   queueIndex: -1,
-  videoQuality: 'auto',
+  videoQuality: (localStorage.getItem('koda_video_quality')?.replace(/"/g, '') as VideoQuality) || 'auto',
   streamAudioUrl: null,
   streamVideoUrl: null,
   isExpanded: false,
@@ -136,7 +141,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isQueueOpen: false,
   playerStyle: (localStorage.getItem('koda_player_style') as PlayerStyle) || 'EDITORIAL',
   ambientBackground: localStorage.getItem('koda_ambient_bg') !== 'false',
-  autoplay: localStorage.getItem('ourtube_autoplay') !== 'false',
+  autoplay: localStorage.getItem('koda_auto_load_queue') !== 'false' && localStorage.getItem('ourtube_autoplay') !== 'false',
   lyricsData: null,
   isLyricsLoading: false,
   currentVideo: null,
@@ -242,6 +247,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     try {
       applyDynamicThemeFromImage(video.thumbnailUrl);
     } catch {}
+
+    // Record video play into local history
+    useTasteStore.getState().recordPlayback(
+      {
+        id: video.id,
+        title: video.title,
+        artist: video.channelName,
+        artistId: video.channelId,
+        duration: video.duration || 180,
+        thumbnailUrl: video.thumbnailUrl,
+        highResThumbnailUrl: video.thumbnailUrl
+      },
+      0.1
+    );
 
     try {
       const res = await resolveStream({
@@ -369,15 +388,49 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ ambientBackground: enabled });
   },
 
-  loadRadioQueue: async (trackId: string) => {
-    if (!get().autoplay || isFetchingRadio) return;
+  loadRadioQueue: async (trackId: string, mood?: string) => {
+    const activeMood = mood || get().stationMood || 'All';
+    if (mood) {
+      set({ stationMood: mood });
+    }
+    if ((!get().autoplay && !mood) || isFetchingRadio) return;
     isFetchingRadio = true;
     try {
-      const candidates = await innertubeService.getWatchNextRadio(trackId);
+      let candidates = await innertubeService.getWatchNextRadio(trackId);
+      const filterExplicit = localStorage.getItem('koda_filter_explicit') === 'true';
+      if (filterExplicit) {
+        candidates = candidates.filter((c) => !c.isExplicit);
+      }
+
+      if (activeMood === 'Familiar') {
+        const taste = useTasteStore.getState();
+        const knownArtists = new Set([
+          ...taste.history.map((h) => h.artist.toLowerCase()),
+          ...taste.likedTracks.map((t) => t.artist.toLowerCase()),
+          ...taste.pickedArtists.map((a) => a.toLowerCase())
+        ]);
+        const familiar = candidates.filter((c) => knownArtists.has((c.artist || '').toLowerCase()));
+        const rest = candidates.filter((c) => !knownArtists.has((c.artist || '').toLowerCase()));
+        candidates = [...familiar, ...rest];
+      } else if (activeMood === 'Discover') {
+        const taste = useTasteStore.getState();
+        const playedIds = new Set(taste.history.map((h) => h.trackId));
+        const unplayed = candidates.filter((c) => !playedIds.has(c.id));
+        const rest = candidates.filter((c) => playedIds.has(c.id));
+        candidates = [...unplayed, ...rest];
+      } else if (activeMood === 'Deep cuts') {
+        candidates = [...candidates].reverse();
+      }
+
       if (candidates.length > 0) {
         set((state) => {
-          const additional = extendStation(state.queue, candidates, 25);
-          return additional.length > 0 ? { queue: [...state.queue, ...additional] } : {};
+          // If user explicitly switched station mood chip, refresh upcoming autoplay tier
+          const baseQueue = mood
+            ? state.queue.filter((entry, idx) => idx <= state.queueIndex || entry.tier !== 'autoplay')
+            : state.queue;
+          const maxPerArtist = activeMood === 'Discover' ? 1 : 2;
+          const additional = extendStation(baseQueue, candidates, 25, maxPerArtist);
+          return additional.length > 0 ? { queue: [...baseQueue, ...additional] } : {};
         });
       }
     } catch (err) {
@@ -432,9 +485,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     // Fetch rich lyrics in background bound to this exact sequence token
     get().loadLyricsForTrack(resolvedTrack, reqToken);
 
-    // Record play into local playback history immediately
-    useTasteStore.getState().recordPlayback(resolvedTrack, 0.1);
-
     // Dynamically apply M3 Expressive theme extracted from album cover
     applyDynamicThemeFromImage(highRes);
 
@@ -473,6 +523,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           isBuffering: false
         });
 
+        // Record play into local taste profile once stream resolves
+        useTasteStore.getState().recordPlayback(resolvedTrack, 0.1);
+
         // Pre-cache the next 2-3 tracks in queue for seamless, gapless playback
         const { queue, queueIndex } = get();
         const upcoming = queue.slice(queueIndex + 1, queueIndex + 4).map((e) => e.track);
@@ -483,9 +536,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         console.warn('[OurTube Player] No direct audio stream URL returned for:', track.id);
         set({ isBuffering: false });
       }
-
-      // Record play into local taste profile
-      useTasteStore.getState().recordPlayback(resolvedTrack, 0.1);
     } catch (err) {
       if (reqToken === activePlaybackToken) {
         console.warn('[OurTube Player] Stream resolution failed:', err);
@@ -518,8 +568,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queueIndex = built.queueIndex;
     }
 
+    const unshuffledQueue = [...queue];
+    if (get().isShuffled && queue.length > queueIndex + 2) {
+      queue = shuffleUpcomingQueue(queue, queueIndex);
+    }
+
     set({
       queue,
+      unshuffledQueue,
       queueIndex
     });
 
@@ -693,7 +749,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   toggleShuffle: () => {
-    set((state) => ({ isShuffled: !state.isShuffled }));
+    set((state) => {
+      const nextShuffled = !state.isShuffled;
+      if (nextShuffled) {
+        const unshuffled = state.unshuffledQueue || [...state.queue];
+        const shuffled = shuffleUpcomingQueue(state.queue, state.queueIndex);
+        return {
+          isShuffled: true,
+          unshuffledQueue: unshuffled,
+          queue: shuffled
+        };
+      } else {
+        if (state.unshuffledQueue && state.currentTrack) {
+          const currentId = state.currentTrack.id;
+          const restoredIdx = state.unshuffledQueue.findIndex((e) => e.track.id === currentId);
+          if (restoredIdx !== -1) {
+            return {
+              isShuffled: false,
+              queue: state.unshuffledQueue,
+              queueIndex: restoredIdx,
+              unshuffledQueue: null
+            };
+          }
+        }
+        return { isShuffled: false, unshuffledQueue: null };
+      }
+    });
   },
 
   setExpanded: (expanded: boolean) => {

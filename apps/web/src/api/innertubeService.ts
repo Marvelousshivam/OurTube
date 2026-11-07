@@ -15,7 +15,7 @@ import {
   VideoSearchDateFilter
 } from '../types';
 import { bridgeClient } from './bridgeClient';
-import { sizedArtwork } from './artworkService';
+import { sizedArtwork, FALLBACK_ARTWORK_DATA_URI } from './artworkService';
 import { getWebInnertube } from './streamResolver';
 
 export interface HomeSection {
@@ -997,7 +997,13 @@ export class InnertubeService {
           const title = this.getNodeText(pr.title);
           if (title) {
             seenPlaylistIds.add(playlistId);
-            const thumbs: any[] = pr.thumbnail?.thumbnails || pr.thumbnails?.[0]?.thumbnails || [];
+            const thumbs: any[] =
+              pr.thumbnail?.thumbnails ||
+              pr.thumbnails?.[0]?.thumbnails ||
+              pr.thumbnailRenderer?.playlistVideoThumbnailRenderer?.thumbnail?.thumbnails ||
+              pr.thumbnailRenderer?.playlistCustomThumbnailRenderer?.thumbnail?.thumbnails ||
+              pr.sidebarThumbnails?.[0]?.thumbnails ||
+              [];
             const thumbnailUrl = thumbs.slice(-1)[0]?.url;
             const videoCountText = this.getNodeText(pr.videoCountText || pr.thumbnailText);
             const channelName = this.getNodeText(pr.shortBylineText || pr.longBylineText);
@@ -2482,6 +2488,7 @@ export class InnertubeService {
       const videoPlaylists = await this.getVideoPlaylists();
       for (const vp of videoPlaylists) {
         const cleanId = `playlist_${vp.id.replace(/^VL/, '')}`;
+        const resolvedThumb = vp.thumbnailUrl ? sizedArtwork(vp.thumbnailUrl, 544) : '';
         if (!seen.has(cleanId)) {
           seen.add(cleanId);
           playlists.push({
@@ -2489,9 +2496,20 @@ export class InnertubeService {
             title: vp.title,
             subtitle: vp.videoCountText || `${vp.channelName ? `${vp.channelName} • ` : ''}Playlist`,
             author: vp.channelName || 'You',
-            imageUrl: vp.thumbnailUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=80',
+            imageUrl: resolvedThumb || FALLBACK_ARTWORK_DATA_URI,
             trackCount: vp.videoCountText ? parseInt(vp.videoCountText, 10) || undefined : undefined
           });
+        } else if (resolvedThumb && resolvedThumb !== FALLBACK_ARTWORK_DATA_URI) {
+          const existing = playlists.find((p) => p.id === cleanId);
+          if (
+            existing &&
+            (!existing.imageUrl ||
+              existing.imageUrl === FALLBACK_ARTWORK_DATA_URI ||
+              existing.imageUrl.includes('unsplash.com') ||
+              existing.imageUrl.includes('/image/mixart'))
+          ) {
+            existing.imageUrl = resolvedThumb;
+          }
         }
       }
     } catch (err) {
@@ -2593,7 +2611,13 @@ export class InnertubeService {
           const title = this.getNodeText(pr.title);
           if (title) {
             seenIds.add(playlistId);
-            const thumbs: any[] = pr.thumbnail?.thumbnails || pr.thumbnails?.[0]?.thumbnails || [];
+            const thumbs: any[] =
+              pr.thumbnail?.thumbnails ||
+              pr.thumbnails?.[0]?.thumbnails ||
+              pr.thumbnailRenderer?.playlistVideoThumbnailRenderer?.thumbnail?.thumbnails ||
+              pr.thumbnailRenderer?.playlistCustomThumbnailRenderer?.thumbnail?.thumbnails ||
+              pr.sidebarThumbnails?.[0]?.thumbnails ||
+              [];
             playlists.push({
               id: playlistId,
               title,
@@ -2612,7 +2636,13 @@ export class InnertubeService {
           const title = this.getNodeText(gpr.title);
           if (title) {
             seenIds.add(playlistId);
-            const thumbs: any[] = gpr.thumbnail?.thumbnails || [];
+            const thumbs: any[] =
+              gpr.thumbnail?.thumbnails ||
+              gpr.thumbnails?.[0]?.thumbnails ||
+              gpr.thumbnailRenderer?.playlistVideoThumbnailRenderer?.thumbnail?.thumbnails ||
+              gpr.thumbnailRenderer?.playlistCustomThumbnailRenderer?.thumbnail?.thumbnails ||
+              gpr.sidebarThumbnails?.[0]?.thumbnails ||
+              [];
             playlists.push({
               id: playlistId,
               title,
@@ -2640,7 +2670,10 @@ export class InnertubeService {
               seenIds.add(playlistId);
               const thumb =
                 lockup.contentImage?.collectionThumbnailViewModel?.primaryThumbnail?.thumbnailViewModel?.image
-                  ?.sources?.slice(-1)[0]?.url;
+                  ?.sources?.slice(-1)[0]?.url ||
+                lockup.contentImage?.collectionThumbnailViewModel?.stackThumbnails?.[0]?.thumbnailViewModel?.image
+                  ?.sources?.slice(-1)[0]?.url ||
+                lockup.contentImage?.thumbnailViewModel?.image?.sources?.slice(-1)[0]?.url;
               const channelName = metadata?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0]?.text?.content?.replace(
                 /\s*•\s*Playlist/i,
                 ''
@@ -2988,7 +3021,7 @@ export class InnertubeService {
             artist: artistText || 'YouTube Music',
             duration: 210,
             thumbnailUrl: finalThumb,
-            highResThumbnailUrl: sizedArtwork(finalThumb, 1200)
+            highResThumbnailUrl: sizedArtwork(finalThumb, 544)
           });
         }
 
@@ -3050,7 +3083,7 @@ export class InnertubeService {
               artist: subtitle || 'YouTube Music',
               duration: 240,
               thumbnailUrl: finalThumb,
-              highResThumbnailUrl: sizedArtwork(finalThumb, 1200)
+              highResThumbnailUrl: sizedArtwork(finalThumb, 544)
             });
           }
 
@@ -3084,7 +3117,7 @@ export class InnertubeService {
                   artist: innerArtist || subtitle || 'YouTube Music',
                   duration: 210,
                   thumbnailUrl: innerThumb,
-                  highResThumbnailUrl: sizedArtwork(innerThumb, 1200)
+                  highResThumbnailUrl: sizedArtwork(innerThumb, 544)
                 });
               }
             }
@@ -3125,7 +3158,7 @@ export class InnertubeService {
               artist,
               duration: 210,
               thumbnailUrl: rawThumb,
-              highResThumbnailUrl: sizedArtwork(rawThumb, 1200)
+              highResThumbnailUrl: sizedArtwork(rawThumb, 544)
             });
           }
         }
@@ -3203,7 +3236,7 @@ export class InnertubeService {
               artist,
               duration: 210,
               thumbnailUrl: thumb,
-              highResThumbnailUrl: sizedArtwork(thumb, 1200)
+              highResThumbnailUrl: sizedArtwork(thumb, 544)
             });
           }
         }
@@ -3365,9 +3398,17 @@ export class InnertubeService {
 
       const thumbs: any[] =
         r.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails ||
+        r.thumbnailRenderer?.musicAnimatedThumbnailRenderer?.backupRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails ||
+        r.thumbnailRenderer?.croppedSquareThumbnailRenderer?.thumbnail?.thumbnails ||
+        r.thumbnailRenderer?.playlistVideoThumbnailRenderer?.thumbnail?.thumbnails ||
+        r.thumbnailRenderer?.playlistCustomThumbnailRenderer?.thumbnail?.thumbnails ||
         r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails ||
+        r.thumbnail?.croppedSquareThumbnailRenderer?.thumbnail?.thumbnails ||
         r.thumbnail?.thumbnails ||
+        r.thumbnails?.[0]?.thumbnails ||
+        r.sidebarThumbnails?.[0]?.thumbnails ||
         r.contentImage?.collectionThumbnailViewModel?.primaryThumbnail?.thumbnailViewModel?.image?.sources ||
+        r.contentImage?.collectionThumbnailViewModel?.stackThumbnails?.[0]?.thumbnailViewModel?.image?.sources ||
         r.contentImage?.thumbnailViewModel?.image?.sources ||
         [];
 
@@ -3388,7 +3429,7 @@ export class InnertubeService {
         title,
         subtitle: rawSub || 'Playlist • YouTube Music',
         author: rawSub ? rawSub.split('•')[0]?.trim() || 'You' : 'You',
-        imageUrl: thumb || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=80',
+        imageUrl: thumb || FALLBACK_ARTWORK_DATA_URI,
         trackCount
       });
     };

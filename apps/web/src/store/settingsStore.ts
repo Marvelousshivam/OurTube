@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { PlayerStyle } from '../types';
 import { PaletteStyle, AppPalette, APP_PALETTES, applyPaletteTheme } from '../theme/ColorPalettes';
 import { usePlayerStore } from './playerStore';
+import { useTasteStore } from './tasteStore';
 
 export type ThemeMode = 'system' | 'light' | 'dark' | 'amoled';
 export type AudioStreamQuality = 'high' | 'normal' | 'saver';
@@ -133,13 +134,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   discordShowArtwork: getStored<boolean>('koda_discord_show_artwork', true),
   discordShowButtons: getStored<boolean>('koda_discord_show_buttons', true),
   discordIncognito: getStored<boolean>('koda_discord_incognito', false),
-  discordStatus: 'broadcasting',
-  discordUser: {
-    id: '1543679166967193620',
-    name: 'Koda Listener',
-    username: 'kodalistener',
-    avatarUrl: null
-  },
+  discordStatus: getStored<boolean>('koda_discord_rpc_enabled', true) ? 'idle' : 'disconnected',
+  discordUser: null,
 
   // Content Defaults
   homeLayoutMode: getStored<HomeLayoutMode>('koda_home_layout', 'spotlight'),
@@ -172,7 +168,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ selectedPaletteId: paletteId });
     const { themeMode, paletteStyle } = get();
     const pal = APP_PALETTES.find((p) => p.id === paletteId) || APP_PALETTES[0];
-    const isDark = themeMode !== 'light';
+    const isDark =
+      themeMode === 'dark' ||
+      themeMode === 'amoled' ||
+      (themeMode === 'system' &&
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
     applyPaletteTheme(pal, isDark, paletteStyle);
   },
 
@@ -181,7 +182,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ paletteStyle: style });
     const { selectedPaletteId, themeMode } = get();
     const pal = APP_PALETTES.find((p) => p.id === selectedPaletteId) || APP_PALETTES[0];
-    const isDark = themeMode !== 'light';
+    const isDark =
+      themeMode === 'dark' ||
+      themeMode === 'amoled' ||
+      (themeMode === 'system' &&
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
     applyPaletteTheme(pal, isDark, style);
   },
 
@@ -205,6 +211,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setReduceMotion: (reduce: boolean) => {
     setStored('koda_reduce_motion', reduce);
     set({ reduceMotion: reduce });
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-reduce-motion', String(reduce));
+    }
   },
 
   setBottomEqualizer: (enabled: boolean) => {
@@ -221,6 +230,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setVideoQuality: (quality: 'auto' | '1080p' | '720p' | '480p') => {
     setStored('koda_video_quality', quality);
     set({ videoQuality: quality });
+    usePlayerStore.getState().setVideoQuality(quality);
   },
 
   setCrossfadeEnabled: (enabled: boolean) => {
@@ -236,6 +246,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setAutoLoadQueue: (enabled: boolean) => {
     setStored('koda_auto_load_queue', enabled);
     set({ autoLoadQueue: enabled });
+    if (usePlayerStore.getState().autoplay !== enabled) {
+      usePlayerStore.getState().toggleAutoplay();
+    }
   },
 
   setSaveListeningHistory: (enabled: boolean) => {
@@ -251,7 +264,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   // Discord Actions
   setDiscordRpcEnabled: (enabled: boolean) => {
     setStored('koda_discord_rpc_enabled', enabled);
-    set({ discordRpcEnabled: enabled });
+    set({ discordRpcEnabled: enabled, discordStatus: enabled ? 'idle' : 'disconnected' });
   },
 
   setDiscordShowElapsed: (show: boolean) => {
@@ -294,6 +307,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   setIncognitoSession: (incognito: boolean) => {
+    if (typeof window !== 'undefined') {
+      (window as any).__koda_incognito_session = incognito;
+    }
     set({ incognitoSession: incognito });
   },
 
@@ -326,14 +342,37 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   exportUserData: () => {
     try {
-      const taste = localStorage.getItem('koda_taste_profile_v1');
-      const liked = localStorage.getItem('koda_liked_tracks');
+      const tasteState = useTasteStore.getState();
       const auth = localStorage.getItem('ourtube_auth_cache');
       const payload = {
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
-        taste: taste ? JSON.parse(taste) : null,
-        liked: liked ? JSON.parse(liked) : null,
+        taste: {
+          likedTracks: tasteState.likedTracks,
+          history: tasteState.history,
+          savedPlaylists: tasteState.savedPlaylists,
+          followedArtists: tasteState.followedArtists,
+          subscribedChannels: tasteState.subscribedChannels,
+          likedVideos: tasteState.likedVideos,
+          pickedArtists: tasteState.pickedArtists,
+          pickedGenres: tasteState.pickedGenres,
+          deckVerdicts: tasteState.deckVerdicts
+        },
+        settings: {
+          themeMode: get().themeMode,
+          selectedPaletteId: get().selectedPaletteId,
+          paletteStyle: get().paletteStyle,
+          playerStyle: get().playerStyle,
+          audioQuality: get().audioQuality,
+          videoQuality: get().videoQuality,
+          crossfadeEnabled: get().crossfadeEnabled,
+          crossfadeDuration: get().crossfadeDuration,
+          autoLoadQueue: get().autoLoadQueue,
+          saveListeningHistory: get().saveListeningHistory,
+          audioNormalization: get().audioNormalization,
+          homeLayoutMode: get().homeLayoutMode,
+          filterExplicit: get().filterExplicit
+        },
         auth: auth ? JSON.parse(auth) : null
       };
 
@@ -354,10 +393,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (parsed.taste) {
-        localStorage.setItem('koda_taste_profile_v1', JSON.stringify(parsed.taste));
+        await useTasteStore.getState().importTasteData(parsed.taste);
+      } else if (Array.isArray(parsed.liked)) {
+        await useTasteStore.getState().importTasteData({ likedTracks: parsed.liked });
       }
-      if (parsed.liked) {
-        localStorage.setItem('koda_liked_tracks', JSON.stringify(parsed.liked));
+      if (parsed.settings && typeof parsed.settings === 'object') {
+        const s = parsed.settings;
+        if (s.themeMode) get().setThemeMode(s.themeMode);
+        if (s.selectedPaletteId) get().setSelectedPaletteId(s.selectedPaletteId);
+        if (s.paletteStyle) get().setPaletteStyle(s.paletteStyle);
+        if (s.playerStyle) get().setPlayerStyle(s.playerStyle);
+        if (s.audioQuality) get().setAudioQuality(s.audioQuality);
+        if (s.videoQuality) get().setVideoQuality(s.videoQuality);
+        if (typeof s.crossfadeEnabled === 'boolean') get().setCrossfadeEnabled(s.crossfadeEnabled);
+        if (typeof s.crossfadeDuration === 'number') get().setCrossfadeDuration(s.crossfadeDuration);
+        if (typeof s.autoLoadQueue === 'boolean') get().setAutoLoadQueue(s.autoLoadQueue);
+        if (typeof s.saveListeningHistory === 'boolean') get().setSaveListeningHistory(s.saveListeningHistory);
+        if (typeof s.audioNormalization === 'boolean') get().setAudioNormalization(s.audioNormalization);
+        if (s.homeLayoutMode) get().setHomeLayoutMode(s.homeLayoutMode);
+        if (typeof s.filterExplicit === 'boolean') get().setFilterExplicit(s.filterExplicit);
       }
       return true;
     } catch (err) {

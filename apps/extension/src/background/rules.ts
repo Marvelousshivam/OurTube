@@ -369,7 +369,7 @@ export async function ensureOriginDNRRules(origin: string): Promise<void> {
   try {
     const urlObj = new URL(origin);
     const domain = urlObj.hostname;
-    if (domain === 'localhost' || domain === '127.0.0.1' || origin === 'https://ourtube-zeta.vercel.app') {
+    if (origin === 'http://localhost:5173' || origin === 'https://ourtube-zeta.vercel.app') {
       return;
     }
 

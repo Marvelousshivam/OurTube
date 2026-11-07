@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TrackMetadata } from '../../../types';
+import { TrackMetadata, RepeatMode } from '../../../types';
 import { ExpressiveScrubber } from '../ExpressiveScrubber';
 import { sizedArtwork, handleArtworkError } from '../../../api/artworkService';
 
@@ -9,11 +9,15 @@ interface GesturePlayerProps {
   currentTime: number;
   duration: number;
   isLiked: boolean;
+  repeatMode?: RepeatMode;
+  isShuffled?: boolean;
   onTogglePlay: () => void;
   onSeek: (time: number) => void;
   onNext: () => void;
   onPrev: () => void;
   onToggleLike: () => void;
+  onToggleRepeat?: () => void;
+  onToggleShuffle?: () => void;
   onOpenLyrics: () => void;
   onOpenQueue: () => void;
 }
@@ -24,11 +28,15 @@ export const GesturePlayer: React.FC<GesturePlayerProps> = ({
   currentTime,
   duration,
   isLiked,
+  repeatMode = 'off',
+  isShuffled = false,
   onTogglePlay,
   onSeek,
   onNext,
   onPrev,
   onToggleLike,
+  onToggleRepeat,
+  onToggleShuffle,
   onOpenLyrics,
   onOpenQueue
 }) => {
@@ -90,6 +98,19 @@ export const GesturePlayer: React.FC<GesturePlayerProps> = ({
             <span className={`material-symbols-rounded ${isLiked ? 'filled' : ''}`}>favorite</span>
           </button>
           <button
+            onClick={onOpenLyrics}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'inherit',
+              padding: '6px'
+            }}
+            title="Lyrics"
+          >
+            <span className="material-symbols-rounded">lyrics</span>
+          </button>
+          <button
             onClick={onOpenQueue}
             style={{
               background: 'transparent',
@@ -98,6 +119,7 @@ export const GesturePlayer: React.FC<GesturePlayerProps> = ({
               color: 'inherit',
               padding: '6px'
             }}
+            title="Up Next Queue"
           >
             <span className="material-symbols-rounded">queue_music</span>
           </button>
@@ -160,10 +182,25 @@ export const GesturePlayer: React.FC<GesturePlayerProps> = ({
           onSeek={onSeek}
         />
 
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '24px' }}>
+          <button
+            onClick={onToggleShuffle}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: isShuffled ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-outline)',
+              padding: '6px'
+            }}
+            title="Shuffle"
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '22px' }}>shuffle</span>
+          </button>
+
           <button
             onClick={onPrev}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}
+            title="Previous track"
           >
             <span className="material-symbols-rounded" style={{ fontSize: '36px' }}>skip_previous</span>
           </button>
@@ -182,6 +219,7 @@ export const GesturePlayer: React.FC<GesturePlayerProps> = ({
               alignItems: 'center',
               justifyContent: 'center'
             }}
+            title={isPlaying ? 'Pause' : 'Play'}
           >
             <span className="material-symbols-rounded" style={{ fontSize: '32px' }}>
               {isPlaying ? 'pause' : 'play_arrow'}
@@ -191,8 +229,25 @@ export const GesturePlayer: React.FC<GesturePlayerProps> = ({
           <button
             onClick={onNext}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}
+            title="Next track"
           >
             <span className="material-symbols-rounded" style={{ fontSize: '36px' }}>skip_next</span>
+          </button>
+
+          <button
+            onClick={onToggleRepeat}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: repeatMode !== 'off' ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-outline)',
+              padding: '6px'
+            }}
+            title={`Repeat: ${repeatMode}`}
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '22px' }}>
+              {repeatMode === 'one' ? 'repeat_one' : 'repeat'}
+            </span>
           </button>
         </div>
       </div>

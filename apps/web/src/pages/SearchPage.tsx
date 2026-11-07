@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { innertubeService } from '../api/innertubeService';
 import { usePlayerStore } from '../store/playerStore';
 import { useTasteStore } from '../store/tasteStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { TrackMetadata, SearchFilter } from '../types';
 import { sizedArtwork, handleArtworkError } from '../api/artworkService';
 import { artistPhotoService } from '../api/artistPhotoService';
@@ -38,6 +39,7 @@ function getSavedSearches(): string[] {
 
 function saveSearchQuery(query: string) {
   if (!query.trim()) return;
+  if (useSettingsStore.getState().incognitoSession) return;
   const clean = query.trim();
   const current = getSavedSearches().filter((q) => q.toLowerCase() !== clean.toLowerCase());
   const updated = [clean, ...current].slice(0, 8);
@@ -200,7 +202,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onOpenPlaylist, onOpenAr
       innertubeService
         .search(query, activeFilter)
         .then((res) => {
-          setResults(res);
+          const filterExplicit = useSettingsStore.getState().filterExplicit;
+          const filtered = filterExplicit ? res.filter((r) => !r.isExplicit) : res;
+          setResults(filtered);
           setLoading(false);
           saveSearchQuery(query);
           setRecentSearches(getSavedSearches());

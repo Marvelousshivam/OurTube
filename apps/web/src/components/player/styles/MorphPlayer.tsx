@@ -189,6 +189,7 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
               justifyContent: 'space-between',
               fontSize: '11px',
               fontWeight: 600,
+              fontVariantNumeric: 'tabular-nums',
               color: 'var(--md-sys-color-outline)'
             }}
           >
@@ -346,6 +347,23 @@ export const MorphPlayer: React.FC<MorphPlayerProps> = ({
           >
             <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
               lyrics
+            </span>
+          </button>
+
+          {/* Queue */}
+          <button
+            onClick={onOpenQueue}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--md-sys-color-outline)',
+              padding: '6px'
+            }}
+            title="Up Next Queue"
+          >
+            <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+              queue_music
             </span>
           </button>
         </div>

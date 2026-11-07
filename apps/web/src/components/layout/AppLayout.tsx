@@ -37,6 +37,7 @@ export const AppLayout: React.FC = () => {
     return false;
   });
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(true);
 
   const handleToggleVideoMode = (mode: boolean) => {
     setVideoMode(mode);
@@ -367,6 +368,7 @@ export const AppLayout: React.FC = () => {
             {/* Notification Bell Button (Matching Koda) */}
             <NotificationBellButton
               onClick={() => setIsNotificationsOpen(true)}
+              hasUnread={hasUnreadNotifications}
             />
 
             {/* Settings Button: shown when not on settings */}
@@ -523,6 +525,7 @@ export const AppLayout: React.FC = () => {
       <NotificationsSheet
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
+        onUnreadChange={setHasUnreadNotifications}
         onSelectVideo={(v) => {
           if (v.id && v.title) {
             playVideo({

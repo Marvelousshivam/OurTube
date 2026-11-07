@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePlayerStore } from '../../store/playerStore';
+import { useTasteStore } from '../../store/tasteStore';
 import { NativeVideoPlayerEngine } from './NativeVideoPlayerEngine';
 import { VideoCommentsSheet } from './VideoCommentsSheet';
 import { KodaVideoTitleCard } from './KodaVideoTitleCard';
@@ -33,12 +34,20 @@ export const VideoWatchOverlay: React.FC = () => {
     setHoldTo2x,
     playbackSpeed,
     audioTracks,
-    selectedAudioTrackId
+    selectedAudioTrackId,
+    autoplay
   } = usePlayerStore();
 
+  const {
+    isVideoLiked,
+    toggleLikeVideo,
+    isChannelSubscribed,
+    toggleSubscribeChannel,
+    isLiked: isTrackSaved,
+    toggleLikeTrack
+  } = useTasteStore();
+
   const [showControls, setShowControls] = useState(true);
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
   const [isDisliked, setIsDisliked] = useState(false);
   const [watchDetails, setWatchDetails] = useState<VideoWatchDetails | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
@@ -71,6 +80,7 @@ export const VideoWatchOverlay: React.FC = () => {
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
   const lastTapTimeRef = useRef(0);
+  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekRippleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToastNotification = (msg: string) => {
@@ -127,8 +137,8 @@ export const VideoWatchOverlay: React.FC = () => {
                   thumbnailUrl: t.highResThumbnailUrl || t.thumbnailUrl,
                   duration: t.duration || 240,
                   durationFormatted: `${Math.floor((t.duration || 240) / 60)}:${String((t.duration || 240) % 60).padStart(2, '0')}`,
-                  viewCount: `${Math.floor(Math.random() * 400 + 40)}K views`,
-                  uploadedDate: 'Recommended'
+                  viewCount: t.viewCount ? `${t.viewCount.toLocaleString()} views` : 'Recommended',
+                  uploadedDate: 'Related'
                 }))
               );
             })
@@ -257,7 +267,7 @@ export const VideoWatchOverlay: React.FC = () => {
     }
   };
 
-  // Double-tap seek & single-tap play/pause handler
+  // Double-tap seek & debounced single-tap play/pause handler (prevents first click of double-tap from pausing)
   const handleViewportClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (isLongPressRef.current) return;
     const now = Date.now();
@@ -265,7 +275,12 @@ export const VideoWatchOverlay: React.FC = () => {
     const x = e.clientX - rect.left;
     const width = rect.width;
 
-    if (now - lastTapTimeRef.current < 320) {
+    if (now - lastTapTimeRef.current < 300) {
+      // Cancel pending single-tap play/pause toggle
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
       // Double tap detected
       if (x < width * 0.38) {
         // Left side: seek -10s
@@ -276,15 +291,19 @@ export const VideoWatchOverlay: React.FC = () => {
         seek(Math.min(duration, currentTime + 10));
         setSeekRipple({ side: 'right', amount: 10 });
       } else {
-        triggerPlayToggle();
+        handleFullscreenToggle();
       }
       if (seekRippleTimeoutRef.current) clearTimeout(seekRippleTimeoutRef.current);
       seekRippleTimeoutRef.current = setTimeout(() => setSeekRipple(null), 600);
+      lastTapTimeRef.current = 0;
     } else {
-      // Single tap: toggle play/pause or controls
-      triggerPlayToggle();
+      lastTapTimeRef.current = now;
+      if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = setTimeout(() => {
+        singleTapTimerRef.current = null;
+        triggerPlayToggle();
+      }, 240);
     }
-    lastTapTimeRef.current = now;
   };
 
   // Keyboard Shortcuts (F: Fullscreen, Space/K: Play/Pause, J/L: Seek -10s/+10s, M: Mute, T: Theater)
@@ -355,12 +374,16 @@ export const VideoWatchOverlay: React.FC = () => {
 
   // Metadata with thorough fallbacks
   const channelName = watchDetails?.channel?.name || currentVideo.channelName;
+  const channelId = watchDetails?.channel?.id || currentVideo.channelId || channelName;
   const channelAvatarUrl = watchDetails?.channel?.avatarUrl || currentVideo.channelIconUrl;
   const subscriberCount = watchDetails?.channel?.subscriberCount;
   const isVerified = Boolean(watchDetails?.channel?.isVerified ?? currentVideo.isVerified);
   const viewCountFormatted = watchDetails?.viewCount || currentVideo.viewCount;
   const uploadDateFormatted = watchDetails?.publishedDate || currentVideo.uploadedDate || 'Uploaded recently';
   const descriptionText = watchDetails?.description || currentVideo.description || '';
+  const isLiked = isVideoLiked(currentVideo.id);
+  const isSubscribed = isChannelSubscribed(channelId || channelName);
+  const isSaved = isTrackSaved(currentVideo.id);
 
   // Parse links and hashtags in description
   const renderDescriptionWithLinks = (text: string) => {
@@ -603,8 +626,21 @@ export const VideoWatchOverlay: React.FC = () => {
                   {/* Like Button */}
                   <button
                     onClick={() => {
-                      setIsLiked(!isLiked);
-                      if (!isLiked) setIsDisliked(false);
+                      const nextLiked = toggleLikeVideo({
+                        id: currentVideo.id,
+                        title: currentVideo.title,
+                        channelName,
+                        channelId,
+                        thumbnailUrl: currentVideo.thumbnailUrl,
+                        duration: currentVideo.duration,
+                        viewCountText: viewCountFormatted
+                      });
+                      if (nextLiked) {
+                        setIsDisliked(false);
+                        showToastNotification('Added to Liked Videos');
+                      } else {
+                        showToastNotification('Removed from Liked Videos');
+                      }
                     }}
                     style={{
                       display: 'inline-flex',
@@ -626,7 +662,7 @@ export const VideoWatchOverlay: React.FC = () => {
                     >
                       thumb_up
                     </span>
-                    <span>{watchDetails?.likeCount || (isLiked ? '1' : 'Like')}</span>
+                    <span>{watchDetails?.likeCount || (isLiked ? 'Liked' : 'Like')}</span>
                   </button>
 
                   <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }} />
@@ -634,8 +670,19 @@ export const VideoWatchOverlay: React.FC = () => {
                   {/* Dislike Button */}
                   <button
                     onClick={() => {
-                      setIsDisliked(!isDisliked);
-                      if (!isDisliked) setIsLiked(false);
+                      const nextDisliked = !isDisliked;
+                      setIsDisliked(nextDisliked);
+                      if (nextDisliked && isLiked) {
+                        toggleLikeVideo({
+                          id: currentVideo.id,
+                          title: currentVideo.title,
+                          channelName,
+                          channelId,
+                          thumbnailUrl: currentVideo.thumbnailUrl,
+                          duration: currentVideo.duration,
+                          viewCountText: viewCountFormatted
+                        });
+                      }
                     }}
                     title="Dislike"
                     style={{
@@ -692,17 +739,32 @@ export const VideoWatchOverlay: React.FC = () => {
                   <span>Listen as music</span>
                 </button>
 
-                {/* Save to Playlist Button */}
+                {/* Save to Library Button */}
                 <button
-                  onClick={() => showToastNotification('Saved to your Library')}
+                  onClick={async () => {
+                    const added = await toggleLikeTrack({
+                      id: currentVideo.id,
+                      title: currentVideo.title,
+                      artist: channelName,
+                      artistId: channelId,
+                      duration: currentVideo.duration || duration || 180,
+                      thumbnailUrl: currentVideo.thumbnailUrl,
+                      highResThumbnailUrl: currentVideo.thumbnailUrl
+                    });
+                    showToastNotification(added ? 'Saved to your Library' : 'Removed from your Library');
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px',
                     padding: '8px 16px',
                     borderRadius: '16px',
-                    backgroundColor: 'var(--md-sys-color-surface-container-highest, #33353a)',
-                    color: 'var(--md-sys-color-on-surface, #e2e2e9)',
+                    backgroundColor: isSaved
+                      ? 'var(--md-sys-color-primary-container, #3f4759)'
+                      : 'var(--md-sys-color-surface-container-highest, #33353a)',
+                    color: isSaved
+                      ? 'var(--md-sys-color-on-primary-container, #d6e3ff)'
+                      : 'var(--md-sys-color-on-surface, #e2e2e9)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
                     fontWeight: 600,
                     fontSize: '13px',
@@ -710,17 +772,11 @@ export const VideoWatchOverlay: React.FC = () => {
                     whiteSpace: 'nowrap',
                     transition: 'background-color 150ms ease'
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.14)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-highest, #33353a)';
-                  }}
                 >
                   <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
-                    playlist_add
+                    {isSaved ? 'playlist_add_check' : 'playlist_add'}
                   </span>
-                  <span>Save</span>
+                  <span>{isSaved ? 'Saved' : 'Save'}</span>
                 </button>
 
                 {/* Share Button */}
@@ -888,9 +944,13 @@ export const VideoWatchOverlay: React.FC = () => {
               {/* Material 3 Expressive Subscribe Pill */}
               <button
                 onClick={() => {
-                  setIsSubscribed(!isSubscribed);
+                  const nowSubbed = toggleSubscribeChannel({
+                    id: channelId,
+                    name: channelName,
+                    avatarUrl: channelAvatarUrl
+                  });
                   showToastNotification(
-                    !isSubscribed ? `Subscribed to ${channelName}` : `Unsubscribed from ${channelName}`
+                    nowSubbed ? `Subscribed to ${channelName}` : `Unsubscribed from ${channelName}`
                   );
                 }}
                 style={{
@@ -1354,7 +1414,15 @@ export const VideoWatchOverlay: React.FC = () => {
           />
         ) : (
           <>
-            <NativeVideoPlayerEngine />
+            <NativeVideoPlayerEngine
+              onEnded={() => {
+                if (autoplay && relatedVideos.length > 0) {
+                  playVideo(relatedVideos[0]);
+                } else {
+                  usePlayerStore.setState({ isPlaying: false });
+                }
+              }}
+            />
 
             {/* Koda Floating 2x Speed Badge (Press-and-Hold Gesture) */}
             {isHolding2x && (

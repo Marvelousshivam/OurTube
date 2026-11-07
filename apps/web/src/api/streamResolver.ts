@@ -166,6 +166,9 @@ export async function resolveStream(options: StreamOptions): Promise<StreamResol
 
 async function _doResolveStream(options: StreamOptions): Promise<StreamResolutionResponse> {
   const { videoId, quality = 'auto', mode = 'music', audioTrackId } = options;
+  const qualityPref = useSettingsStore.getState().audioQuality;
+  const mappedAudioQuality: 'high' | 'normal' | 'low' =
+    qualityPref === 'saver' ? 'low' : qualityPref === 'normal' ? 'normal' : 'high';
 
   // 1. Companion extension bridge (direct host permissions in background, 0 CORS, supports signed sessions)
   if (bridgeClient.getIsAvailable()) {
@@ -173,6 +176,7 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
       const bridgeRes = await bridgeClient.resolveStream({
         videoId,
         quality,
+        audioQuality: mappedAudioQuality,
         mode,
         audioTrackId
       });
@@ -214,7 +218,7 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
     const formats: any[] = res.data?.streamingData?.formats || [];
 
     // Parse audio tracks to guarantee original audio preference & eliminate regional auto-dubs
-    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptiveFormats);
+    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptiveFormats, mappedAudioQuality);
     let selectedTrack: YouTubeAudioTrackOption | undefined;
     if (audioTrackId) {
       selectedTrack = audioTracks.find((t) => t.id === audioTrackId);
@@ -222,8 +226,6 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
     if (!selectedTrack) {
       selectedTrack = audioTracks.find((t) => t.isOriginal) || audioTracks[0];
     }
-
-    const qualityPref = useSettingsStore.getState().audioQuality;
 
     const audioFormats = adaptiveFormats
       .filter((f) => f.mimeType && f.mimeType.startsWith('audio/') && f.url)
