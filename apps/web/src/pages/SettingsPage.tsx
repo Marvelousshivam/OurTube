@@ -17,8 +17,10 @@ import { DiscordPreviewCard } from '../components/settings/DiscordPreviewCard';
 import { PlayerStyleGallery } from '../components/settings/PlayerStyleGallery';
 import { PaletteStudio } from '../components/theme/PaletteStudio';
 import { KeyboardShortcutsModal } from '../components/settings/KeyboardShortcutsModal';
+import { OurTubeLogo } from '../components/common/OurTubeLogo';
 import { APP_PALETTES, PaletteStyle } from '../theme/ColorPalettes';
 import { bridgeClient } from '../api/bridgeClient';
+import { discordPresenceManager } from '../api/discordPresence';
 import { AuthState, YtChannel } from '../types';
 
 export type SettingsTabId =
@@ -57,7 +59,12 @@ const CATEGORIES: { id: SettingsTabId; label: string; icon: string; getSubtitle:
     id: 'discord',
     label: 'Discord Rich Presence',
     icon: 'chat',
-    getSubtitle: (s) => (s.discordRpcEnabled ? (s.discordIncognito ? 'Incognito' : 'Broadcasting active') : 'Disabled')
+    getSubtitle: (s) => {
+      if (!s.discordConnected) return 'Not connected';
+      if (!s.discordRpcEnabled) return `${s.discordUser?.name || 'Connected'} · Off`;
+      if (s.discordIncognito) return 'Incognito';
+      return `${s.discordUser?.name || 'Connected'} · Active`;
+    }
   },
   {
     id: 'storage',
@@ -98,6 +105,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
   // Diagnostics states
   const [pingResult, setPingResult] = useState<string | null>(null);
   const [isPinging, setIsPinging] = useState(false);
+  const [isDiscordBusy, setIsDiscordBusy] = useState(false);
+  const [discordError, setDiscordError] = useState<string | null>(null);
 
   const refreshStorage = () => {
     settings.getStorageEstimate().then(setStorageEstimate);
@@ -106,13 +115,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
   useEffect(() => {
     refreshStorage();
     bridgeClient.refreshAuth().then(setAuthState);
+    discordPresenceManager.refreshState();
     const unsub = bridgeClient.onAvailabilityChange((available) => {
       if (available) {
         bridgeClient.refreshAuth().then(setAuthState);
+        discordPresenceManager.refreshState();
       }
     });
     return () => unsub();
   }, []);
+
+  const handleDiscordConnectToggle = async () => {
+    setIsDiscordBusy(true);
+    setDiscordError(null);
+    try {
+      if (settings.discordConnected) {
+        await discordPresenceManager.disconnectAccount();
+      } else {
+        await discordPresenceManager.connectAccount();
+      }
+    } catch (err: any) {
+      setDiscordError(err?.message || 'Could not connect to Discord. Please sign in at discord.com and try again.');
+    } finally {
+      setIsDiscordBusy(false);
+    }
+  };
 
   const currentPalette = APP_PALETTES.find((p) => p.id === settings.selectedPaletteId) || APP_PALETTES[0];
   const QUICK_PALETTES = APP_PALETTES.slice(0, 7);
@@ -168,6 +195,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
     audioQuality: settings.audioQuality,
     discordRpcEnabled: settings.discordRpcEnabled,
     discordIncognito: settings.discordIncognito,
+    discordConnected: settings.discordConnected,
+    discordUser: settings.discordUser,
     storageUsed: storageEstimate.usedMb
   };
 
@@ -868,13 +897,160 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
           {activeTab === 'discord' && (
             <div>
               <SettingsSectionHeader
-                title="Discord Rich Presence (BitChord Protocol)"
-                subtitle="Show what you are listening to on your Discord profile in real time"
+                title="Discord Account (BitChord Gateway)"
+                subtitle="Connect your browser's Discord session via the Companion Extension to publish live activity"
+              />
+              <SettingsCard>
+                <div
+                  style={{
+                    padding: '18px 20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '16px',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                    {settings.discordUser?.avatarUrl ? (
+                      <img
+                        src={settings.discordUser.avatarUrl}
+                        alt={settings.discordUser.name}
+                        style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '50%',
+                          objectFit: 'cover',
+                          border: '2px solid #5865f2',
+                          flexShrink: 0
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '14px',
+                          backgroundColor: settings.discordConnected ? '#5865f2' : 'var(--md-sys-color-surface-container-high)',
+                          color: settings.discordConnected ? '#ffffff' : 'var(--md-sys-color-on-surface-variant)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}
+                      >
+                        <span className="material-symbols-rounded" style={{ fontSize: '24px' }}>
+                          {settings.discordConnected ? 'verified_user' : 'forum'}
+                        </span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--md-sys-color-on-surface)' }}>
+                          {settings.discordConnected && settings.discordUser
+                            ? settings.discordUser.name
+                            : 'Discord Account Not Connected'}
+                        </span>
+                        {settings.discordConnected && settings.discordUser?.username && (
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              color: 'var(--md-sys-color-on-surface-variant)'
+                            }}
+                          >
+                            @{settings.discordUser.username}
+                          </span>
+                        )}
+                      </div>
+
+                      <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                        {!settings.discordConnected
+                          ? 'Click Connect to read your active session from an open discord.com tab'
+                          : !settings.discordRpcEnabled
+                            ? 'Presence disabled'
+                            : settings.discordGateway === 'ready'
+                              ? 'Gateway Ready · Showing what you play on Discord'
+                              : settings.discordGateway === 'connecting'
+                                ? 'Connecting to Discord WebSocket Gateway…'
+                                : settings.discordProblem || 'Connected · Ready to broadcast when music plays'}
+                      </span>
+
+                      {(discordError || settings.discordProblem) && (
+                        <span style={{ fontSize: '12px', color: '#f28b82', fontWeight: 600, marginTop: '2px' }}>
+                          {discordError || settings.discordProblem}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isDiscordBusy}
+                    onClick={handleDiscordConnectToggle}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '9999px',
+                      border: settings.discordConnected
+                        ? '1px solid var(--md-sys-color-outline-variant)'
+                        : 'none',
+                      backgroundColor: settings.discordConnected
+                        ? 'var(--md-sys-color-surface-container-high)'
+                        : '#5865f2',
+                      color: settings.discordConnected
+                        ? 'var(--md-sys-color-on-surface)'
+                        : '#ffffff',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      cursor: isDiscordBusy ? 'wait' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      boxShadow: settings.discordConnected ? 'none' : '0 6px 20px rgba(88, 101, 242, 0.38)',
+                      transition: 'all 180ms ease'
+                    }}
+                  >
+                    <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
+                      {isDiscordBusy
+                        ? 'progress_activity'
+                        : settings.discordConnected
+                          ? 'link_off'
+                          : 'add_link'}
+                    </span>
+                    <span>
+                      {isDiscordBusy
+                        ? 'Connecting Discord…'
+                        : settings.discordConnected
+                          ? 'Disconnect'
+                          : 'Connect Discord'}
+                    </span>
+                  </button>
+                </div>
+              </SettingsCard>
+
+              {!settings.discordConnected && (
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--md-sys-color-outline)',
+                    padding: '10px 6px 4px 6px',
+                    lineHeight: 1.5
+                  }}
+                >
+                  Connect reads your Discord session from an open <code>discord.com</code> tab (or opens one for you to sign in).
+                  The token stays inside the extension&rsquo;s local storage and is never exposed to the web page.
+                </div>
+              )}
+
+              <SettingsSectionHeader
+                title="Rich Presence Configuration"
+                subtitle="Customize how your OurTube activity card appears on Discord"
               />
               <SettingsCard>
                 <SettingsToggleRow
                   icon="chat"
-                  title="Enable Discord Rich Presence"
+                  title="Show What You're Playing"
                   subtitle="Broadcast current track, artist, album, and artwork to Discord"
                   checked={settings.discordRpcEnabled}
                   onChange={settings.setDiscordRpcEnabled}
@@ -882,6 +1058,91 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
 
                 {settings.discordRpcEnabled && (
                   <>
+                    <SettingsDivider />
+                    <SettingsChoiceRow<'listening' | 'playing' | 'watching' | 'competing'>
+                      icon="podcasts"
+                      title="Activity Type"
+                      subtitle="Choose the verb displayed in your Discord status header"
+                      selected={settings.discordActivityType}
+                      onSelect={settings.setDiscordActivityType}
+                      options={[
+                        { id: 'listening', label: 'Listening to' },
+                        { id: 'playing', label: 'Playing' },
+                        { id: 'watching', label: 'Watching' },
+                        { id: 'competing', label: 'Competing in' }
+                      ]}
+                    />
+
+                    <SettingsDivider />
+                    <SettingsChoiceRow<'online' | 'idle' | 'dnd' | 'invisible'>
+                      icon="circle"
+                      title="Online Status"
+                      subtitle="Presence indicator dot shown alongside your activity"
+                      selected={settings.discordOnlineStatus}
+                      onSelect={settings.setDiscordOnlineStatus}
+                      options={[
+                        { id: 'online', label: 'Online' },
+                        { id: 'idle', label: 'Idle' },
+                        { id: 'dnd', label: 'Do Not Disturb' },
+                        { id: 'invisible', label: 'Invisible' }
+                      ]}
+                    />
+
+                    <SettingsDivider />
+                    <div
+                      style={{
+                        padding: '14px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '16px',
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <span
+                          className="material-symbols-rounded"
+                          style={{ fontSize: '20px', color: 'var(--md-sys-color-primary)' }}
+                        >
+                          badge
+                        </span>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--md-sys-color-on-surface)' }}>
+                            Activity Name
+                          </div>
+                          <div style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                            Application name shown after &ldquo;Listening to&rdquo;
+                          </div>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="OurTube"
+                        value={settings.discordActivityName}
+                        onChange={(e) => settings.setDiscordActivityName(e.target.value)}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid var(--md-sys-color-outline-variant)',
+                          backgroundColor: 'var(--md-sys-color-surface-container-high)',
+                          color: 'var(--md-sys-color-on-surface)',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          width: '200px',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+
+                    <SettingsDivider />
+                    <SettingsToggleRow
+                      icon="format_List_bulleted"
+                      title="Lead with the Song"
+                      subtitle="Server member lists display the song title instead of the artist"
+                      checked={settings.discordUseDetails}
+                      onChange={settings.setDiscordUseDetails}
+                    />
+
                     <SettingsDivider />
                     <SettingsToggleRow
                       icon="schedule"
@@ -895,10 +1156,96 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                     <SettingsToggleRow
                       icon="image"
                       title="Show Album Artwork"
-                      subtitle="Display album art in rich presence widget"
+                      subtitle="Mirror album art via Discord External Assets CDN"
                       checked={settings.discordShowArtwork}
                       onChange={settings.setDiscordShowArtwork}
                     />
+
+                    <SettingsDivider />
+                    <SettingsToggleRow
+                      icon="smart_button"
+                      title="Show Listen on YouTube Music Button"
+                      subtitle="Button 1 linking directly to the active song on YouTube Music"
+                      checked={settings.discordButton1Visible}
+                      onChange={settings.setDiscordButton1Visible}
+                    />
+
+                    {settings.discordButton1Visible && (
+                      <div
+                        style={{
+                          padding: '8px 20px 14px 54px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                          Button 1 Label (supports <code>{'{song_name}'}</code>, <code>{'{artist_name}'}</code>)
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Listen on YouTube Music"
+                          value={settings.discordButton1Text}
+                          onChange={(e) => settings.setDiscordButton1Text(e.target.value)}
+                          style={{
+                            padding: '7px 12px',
+                            borderRadius: '10px',
+                            border: '1px solid var(--md-sys-color-outline-variant)',
+                            backgroundColor: 'var(--md-sys-color-surface-container-high)',
+                            color: 'var(--md-sys-color-on-surface)',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            width: '220px',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    <SettingsDivider />
+                    <SettingsToggleRow
+                      icon="open_in_new"
+                      title="Show Visit OurTube Button"
+                      subtitle="Button 2 linking to the OurTube repository"
+                      checked={settings.discordButton2Visible}
+                      onChange={settings.setDiscordButton2Visible}
+                    />
+
+                    {settings.discordButton2Visible && (
+                      <div
+                        style={{
+                          padding: '8px 20px 14px 54px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                          Button 2 Label
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Visit OurTube"
+                          value={settings.discordButton2Text}
+                          onChange={(e) => settings.setDiscordButton2Text(e.target.value)}
+                          style={{
+                            padding: '7px 12px',
+                            borderRadius: '10px',
+                            border: '1px solid var(--md-sys-color-outline-variant)',
+                            backgroundColor: 'var(--md-sys-color-surface-container-high)',
+                            color: 'var(--md-sys-color-on-surface)',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            width: '220px',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
+                    )}
 
                     <SettingsDivider />
                     <SettingsToggleRow
@@ -1008,23 +1355,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
               />
               <SettingsCard>
                 <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: '20px' }}>
-                  <div
-                    style={{
-                      width: '64px',
-                      height: '64px',
-                      borderRadius: '20px',
-                      backgroundColor: 'var(--md-sys-color-primary)',
-                      color: 'var(--md-sys-color-on-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '28px',
-                      fontWeight: 900,
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
-                    }}
-                  >
-                    O
-                  </div>
+                  <OurTubeLogo size={64} />
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ fontSize: '20px', fontWeight: 900, color: 'var(--md-sys-color-on-surface)' }}>
                       OurTube Web v4.4

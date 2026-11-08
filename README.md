@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="apps/web/public/icons/logo.svg" alt="OurTube Infinity Earphone Logo" width="88" height="88" />
+
 # OurTube 🎵🎬
 
 ### *A Material 3 Expressive YouTube Music Client for the Modern Web.*

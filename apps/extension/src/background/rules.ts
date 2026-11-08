@@ -35,6 +35,38 @@ function impersonate(origin: string): chrome.declarativeNetRequest.ModifyHeaderI
 export const EXTENSION_FETCH_RULE_ID = 100;
 export const EXTENSION_MUSIC_FETCH_RULE_ID = 101;
 export const EXTENSION_STATS_FETCH_RULE_ID = 102;
+export const DISCORD_FETCH_RULE_ID = 400;
+
+/**
+ * Discord's REST API, dressed as its own web client (extension background requests only, tabId -1).
+ */
+export async function installDiscordFetchRule(): Promise<void> {
+  try {
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [DISCORD_FETCH_RULE_ID],
+      addRules: [
+        {
+          id: DISCORD_FETCH_RULE_ID,
+          priority: 1,
+          condition: {
+            urlFilter: '||discord.com/api/',
+            tabIds: [-1],
+            resourceTypes: [
+              chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+              chrome.declarativeNetRequest.ResourceType.OTHER
+            ]
+          },
+          action: {
+            type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+            requestHeaders: impersonate('https://discord.com').slice(0, 2)
+          }
+        }
+      ]
+    });
+  } catch (err) {
+    console.warn('[OurTube Companion] Failed to install Discord session rule:', err);
+  }
+}
 
 /**
  * Scoped to non-tab requests (tabId -1) initiated directly by the extension.

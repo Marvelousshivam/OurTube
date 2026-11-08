@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { SupportedBrowser, BROWSER_CONFIGS } from './BrowserSelectorPills';
+import { OurTubeLogo } from '../common/OurTubeLogo';
 
 interface BrowserExtensionMockupProps {
   currentStep: number; // 1, 2, 3, or 4
@@ -709,23 +710,7 @@ export const BrowserExtensionMockup: React.FC<BrowserExtensionMockupProps> = ({
               }}
             >
               {/* Extension Icon */}
-              <div
-                style={{
-                  width: '42px',
-                  height: '42px',
-                  borderRadius: '10px',
-                  backgroundColor: '#e53935',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#ffffff',
-                  flexShrink: 0
-                }}
-              >
-                <span className="material-symbols-rounded" style={{ fontSize: '24px' }}>
-                  play_arrow
-                </span>
-              </div>
+              <OurTubeLogo size={42} />
 
               {/* Extension Info */}
               <div style={{ flex: 1, minWidth: 0 }}>

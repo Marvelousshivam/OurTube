@@ -1,7 +1,14 @@
 import { BridgeRequest, BridgeResponse } from '@koda/bridge-types';
 import { getAuthState, setSelectedChannelId } from './auth';
 import { handleProxyFetch, handleStreamResolution, handleScrapePage } from './proxy';
-import { installDynamicRules, installExtensionFetchRule, ensureOriginDNRRules } from './rules';
+import { installDynamicRules, installExtensionFetchRule, installDiscordFetchRule, ensureOriginDNRRules } from './rules';
+import {
+  discordState,
+  connectDiscordFromTab,
+  disconnectDiscord,
+  setDiscordEnabled,
+  setPresence
+} from './discord';
 
 console.log('[OurTube Companion] Background Service Worker initialized.');
 
@@ -32,12 +39,14 @@ chrome.runtime.onInstalled.addListener(async () => {
   console.log('[OurTube Companion] Installed successfully.');
   await installDynamicRules();
   await installExtensionFetchRule();
+  await installDiscordFetchRule();
   await autoInjectExistingTabs();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await installDynamicRules();
   await installExtensionFetchRule();
+  await installDiscordFetchRule();
   await autoInjectExistingTabs();
 });
 
@@ -155,15 +164,70 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
           break;
         }
 
+        case 'OURTUBE_BRIDGE_DISCORD_STATE' as any:
+        case 'KODA_BRIDGE_DISCORD_STATE' as any: {
+          const state = await discordState();
+          sendResponse({
+            channel: resChannel,
+            id: message.id,
+            type: message.type,
+            success: true,
+            data: state
+          });
+          break;
+        }
+
+        case 'OURTUBE_BRIDGE_DISCORD_CONNECT' as any:
+        case 'KODA_BRIDGE_DISCORD_CONNECT' as any: {
+          const state = await connectDiscordFromTab();
+          sendResponse({
+            channel: resChannel,
+            id: message.id,
+            type: message.type,
+            success: true,
+            data: state
+          });
+          break;
+        }
+
+        case 'OURTUBE_BRIDGE_DISCORD_DISCONNECT' as any:
+        case 'KODA_BRIDGE_DISCORD_DISCONNECT' as any: {
+          const state = await disconnectDiscord();
+          sendResponse({
+            channel: resChannel,
+            id: message.id,
+            type: message.type,
+            success: true,
+            data: state
+          });
+          break;
+        }
+
+        case 'OURTUBE_BRIDGE_DISCORD_SET_ENABLED' as any:
+        case 'KODA_BRIDGE_DISCORD_SET_ENABLED' as any: {
+          const state = await setDiscordEnabled(Boolean(message.payload?.enabled));
+          sendResponse({
+            channel: resChannel,
+            id: message.id,
+            type: message.type,
+            success: true,
+            data: state
+          });
+          break;
+        }
+
         case 'OURTUBE_BRIDGE_DISCORD' as any:
         case 'KODA_BRIDGE_DISCORD': {
-          // Acknowledge Discord Rich Presence relay payload cleanly
+          const state = await setPresence(
+            message.payload?.track ?? null,
+            message.payload?.options ?? {}
+          );
           const response: BridgeResponse = {
             channel: resChannel,
             id: message.id,
             type: message.type,
             success: true,
-            data: { acknowledged: true, activity: message.payload?.activity || null }
+            data: state
           };
           sendResponse(response);
           break;

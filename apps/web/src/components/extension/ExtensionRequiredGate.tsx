@@ -6,6 +6,7 @@ import { OnboardingStepper } from './OnboardingStepper';
 import { TroubleshootingSheet } from './TroubleshootingSheet';
 import { MaterialYouPaletteBar } from './MaterialYouPaletteBar';
 import { AppShowcasePreview } from './AppShowcasePreview';
+import { OurTubeLogo } from '../common/OurTubeLogo';
 
 type OnboardingViewMode = 'showcase' | 'setup' | 'both';
 
@@ -159,26 +160,7 @@ export const ExtensionRequiredGate: React.FC = () => {
         >
           {/* Brand Logo & Name */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '12px',
-                backgroundColor: '#e53935',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 8px 24px -4px rgba(229, 57, 53, 0.5)',
-                flexShrink: 0
-              }}
-            >
-              <span
-                className="material-symbols-rounded"
-                style={{ fontSize: '24px', color: '#ffffff', marginLeft: '2px' }}
-              >
-                play_arrow
-              </span>
-            </div>
+            <OurTubeLogo size={42} />
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span

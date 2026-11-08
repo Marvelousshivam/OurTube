@@ -25,7 +25,9 @@
     "https://*.youtube.com/*",
     "https://*.googlevideo.com/*",
     "https://accounts.google.com/*",
-    "https://*.google.com/*"
+    "https://*.google.com/*",
+    "https://discord.com/*",
+    "https://*.discord.com/*"
   ],
   "background": {
     "service_worker": "serviceWorker.js",

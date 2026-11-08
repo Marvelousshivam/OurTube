@@ -44,6 +44,17 @@ export interface SettingsState {
   discordIncognito: boolean;
   discordStatus: DiscordStatus;
   discordUser: DiscordUser | null;
+  discordConnected: boolean;
+  discordGateway: 'off' | 'connecting' | 'ready' | 'error';
+  discordProblem: string | null;
+  discordActivityType: 'listening' | 'playing' | 'watching' | 'competing';
+  discordOnlineStatus: 'online' | 'idle' | 'dnd' | 'invisible';
+  discordActivityName: string;
+  discordUseDetails: boolean;
+  discordButton1Visible: boolean;
+  discordButton1Text: string;
+  discordButton2Visible: boolean;
+  discordButton2Text: string;
 
   // Content & Identity
   homeLayoutMode: HomeLayoutMode;
@@ -75,6 +86,16 @@ export interface SettingsState {
   setDiscordIncognito: (incognito: boolean) => void;
   setDiscordStatus: (status: DiscordStatus) => void;
   setDiscordUser: (user: DiscordUser | null) => void;
+  setDiscordConnected: (connected: boolean) => void;
+  setDiscordGateway: (gateway: 'off' | 'connecting' | 'ready' | 'error', problem?: string | null) => void;
+  setDiscordActivityType: (type: 'listening' | 'playing' | 'watching' | 'competing') => void;
+  setDiscordOnlineStatus: (status: 'online' | 'idle' | 'dnd' | 'invisible') => void;
+  setDiscordActivityName: (name: string) => void;
+  setDiscordUseDetails: (useDetails: boolean) => void;
+  setDiscordButton1Visible: (visible: boolean) => void;
+  setDiscordButton1Text: (text: string) => void;
+  setDiscordButton2Visible: (visible: boolean) => void;
+  setDiscordButton2Text: (text: string) => void;
 
   setHomeLayoutMode: (mode: HomeLayoutMode) => void;
   setFilterExplicit: (filter: boolean) => void;
@@ -136,6 +157,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   discordIncognito: getStored<boolean>('koda_discord_incognito', false),
   discordStatus: getStored<boolean>('koda_discord_rpc_enabled', true) ? 'idle' : 'disconnected',
   discordUser: null,
+  discordConnected: false,
+  discordGateway: 'off',
+  discordProblem: null,
+  discordActivityType: getStored<'listening' | 'playing' | 'watching' | 'competing'>('ourtube_discord_activity_type', 'listening'),
+  discordOnlineStatus: getStored<'online' | 'idle' | 'dnd' | 'invisible'>('ourtube_discord_online_status', 'online'),
+  discordActivityName: getStored<string>('ourtube_discord_activity_name', 'OurTube'),
+  discordUseDetails: getStored<boolean>('ourtube_discord_use_details', false),
+  discordButton1Visible: getStored<boolean>('ourtube_discord_btn1_vis', true),
+  discordButton1Text: getStored<string>('ourtube_discord_btn1_text', 'Listen on YouTube Music'),
+  discordButton2Visible: getStored<boolean>('ourtube_discord_btn2_vis', true),
+  discordButton2Text: getStored<string>('ourtube_discord_btn2_text', 'Visit OurTube'),
 
   // Content Defaults
   homeLayoutMode: getStored<HomeLayoutMode>('koda_home_layout', 'spotlight'),
@@ -293,6 +325,54 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setDiscordUser: (user: DiscordUser | null) => {
     set({ discordUser: user });
+  },
+
+  setDiscordConnected: (connected: boolean) => {
+    set({ discordConnected: connected });
+  },
+
+  setDiscordGateway: (gateway: 'off' | 'connecting' | 'ready' | 'error', problem: string | null = null) => {
+    set({ discordGateway: gateway, discordProblem: problem });
+  },
+
+  setDiscordActivityType: (type: 'listening' | 'playing' | 'watching' | 'competing') => {
+    setStored('ourtube_discord_activity_type', type);
+    set({ discordActivityType: type });
+  },
+
+  setDiscordOnlineStatus: (status: 'online' | 'idle' | 'dnd' | 'invisible') => {
+    setStored('ourtube_discord_online_status', status);
+    set({ discordOnlineStatus: status });
+  },
+
+  setDiscordActivityName: (name: string) => {
+    setStored('ourtube_discord_activity_name', name);
+    set({ discordActivityName: name });
+  },
+
+  setDiscordUseDetails: (useDetails: boolean) => {
+    setStored('ourtube_discord_use_details', useDetails);
+    set({ discordUseDetails: useDetails });
+  },
+
+  setDiscordButton1Visible: (visible: boolean) => {
+    setStored('ourtube_discord_btn1_vis', visible);
+    set({ discordButton1Visible: visible });
+  },
+
+  setDiscordButton1Text: (text: string) => {
+    setStored('ourtube_discord_btn1_text', text);
+    set({ discordButton1Text: text });
+  },
+
+  setDiscordButton2Visible: (visible: boolean) => {
+    setStored('ourtube_discord_btn2_vis', visible);
+    set({ discordButton2Visible: visible });
+  },
+
+  setDiscordButton2Text: (text: string) => {
+    setStored('ourtube_discord_btn2_text', text);
+    set({ discordButton2Text: text });
   },
 
   // Content Actions
