@@ -16,7 +16,7 @@ type TimeFilter = 'all' | 'today' | 'week' | 'unwatched';
 type ViewMode = 'grid' | 'list';
 
 export const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onPlayVideo }) => {
-  const { subscribedChannels: localSubscribedChannels } = useTasteStore();
+  const { subscribedChannels: localSubscribedChannels, syncSubscribedChannels } = useTasteStore();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [remoteChannels, setChannels] = useState<SubscribedChannel[]>([]);
   const channels = useMemo(() => {
@@ -72,6 +72,9 @@ export const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onPlayVide
       setVideos(result.videos);
       setChannels(result.channels);
       setContinuationToken(result.continuationToken);
+      if (result.channels.length > 0) {
+        syncSubscribedChannels(result.channels);
+      }
     } catch (err: any) {
       console.error('[SubscriptionsPage] Failed to load subscriptions feed:', err);
       setError(err?.message || 'Failed to load subscriptions feed');

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { VideoItem } from '../../types';
 import { usePlayerStore } from '../../store/playerStore';
+import { useTasteStore } from '../../store/tasteStore';
 
 interface VideoActionMenuProps {
   video: VideoItem;
@@ -19,7 +20,16 @@ export const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
-  const { playTrack, addToQueue } = usePlayerStore();
+  const { playTrack, addToQueue, openChannel } = usePlayerStore();
+  const {
+    toggleWatchLaterVideo,
+    isWatchLaterVideo,
+    toggleLikeVideo,
+    isVideoLiked
+  } = useTasteStore();
+
+  const inWatchLater = isWatchLaterVideo(video.id);
+  const isLiked = isVideoLiked(video.id);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -76,6 +86,46 @@ export const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
     onClose();
   };
 
+  const handleToggleWatchLater = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleWatchLaterVideo({
+      id: video.id,
+      title: video.title,
+      channelName: video.channelName,
+      channelId: video.channelId,
+      channelIconUrl: video.channelIconUrl,
+      thumbnailUrl: video.thumbnailUrl,
+      duration: video.duration,
+      viewCountText: video.viewCount
+    });
+    onClose();
+  };
+
+  const handleToggleLike = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleLikeVideo({
+      id: video.id,
+      title: video.title,
+      channelName: video.channelName,
+      channelId: video.channelId,
+      channelIconUrl: video.channelIconUrl,
+      thumbnailUrl: video.thumbnailUrl,
+      duration: video.duration,
+      viewCountText: video.viewCount
+    });
+    onClose();
+  };
+
+  const handleViewChannel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    openChannel({
+      id: video.channelId,
+      name: video.channelName,
+      avatarUrl: video.channelIconUrl
+    });
+    onClose();
+  };
+
   const handleCopyLink = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
@@ -106,15 +156,15 @@ export const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         top: 'calc(100% + 4px)',
         right: '0',
         zIndex: 50,
-        minWidth: '190px',
-        backgroundColor: 'var(--md-sys-color-surface-container-high, #2b2930)',
-        border: '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.12))',
-        borderRadius: '14px',
+        minWidth: '205px',
+        backgroundColor: 'rgba(30, 31, 36, 0.96)',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        borderRadius: '16px',
         padding: '6px',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        animation: 'm3MenuPop 180ms cubic-bezier(0.34, 1.56, 0.64, 1) both'
+        boxShadow: '0 14px 36px rgba(0, 0, 0, 0.55)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        animation: 'm3MenuPop 180ms cubic-bezier(0.22, 1, 0.36, 1) both'
       }}
     >
       {/* 1. Play Video */}
@@ -129,7 +179,7 @@ export const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       >
-        <span className="material-symbols-rounded" style={{ fontSize: '18px', color: '#ffd8e4' }}>
+        <span className="material-symbols-rounded" style={{ fontSize: '18px', color: '#A8C7FA' }}>
           smart_display
         </span>
         <span>Play Video</span>
@@ -143,13 +193,55 @@ export const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       >
-        <span className="material-symbols-rounded" style={{ fontSize: '18px', color: '#d0bcff' }}>
-          music_note
+        <span className="material-symbols-rounded" style={{ fontSize: '18px', color: '#D0BCFF' }}>
+          headphones
         </span>
-        <span>Play as Music</span>
+        <span>Listen as Music</span>
       </button>
 
-      {/* 3. Add to Queue */}
+      {/* 3. Save to Watch Later */}
+      <button
+        type="button"
+        onClick={handleToggleWatchLater}
+        style={menuItemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+      >
+        <span
+          className="material-symbols-rounded"
+          style={{
+            fontSize: '18px',
+            color: inWatchLater ? '#81C995' : '#E3E3E3',
+            fontVariationSettings: inWatchLater ? "'FILL' 1" : "'FILL' 0"
+          }}
+        >
+          {inWatchLater ? 'task_alt' : 'schedule'}
+        </span>
+        <span>{inWatchLater ? 'Remove Watch Later' : 'Save to Watch Later'}</span>
+      </button>
+
+      {/* 4. Like Video */}
+      <button
+        type="button"
+        onClick={handleToggleLike}
+        style={menuItemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+      >
+        <span
+          className="material-symbols-rounded"
+          style={{
+            fontSize: '18px',
+            color: isLiked ? '#A8C7FA' : '#E3E3E3',
+            fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0"
+          }}
+        >
+          thumb_up
+        </span>
+        <span>{isLiked ? 'Liked Video' : 'Like Video'}</span>
+      </button>
+
+      {/* 5. Add to Queue */}
       <button
         type="button"
         onClick={handleAddToQueue}
@@ -163,9 +255,23 @@ export const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         <span>Add to Queue</span>
       </button>
 
-      <div style={{ height: '1px', backgroundColor: 'var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))', margin: '4px 6px' }} />
+      {/* 6. View Channel */}
+      <button
+        type="button"
+        onClick={handleViewChannel}
+        style={menuItemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+      >
+        <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
+          person
+        </span>
+        <span>View Channel</span>
+      </button>
 
-      {/* 4. Copy Link */}
+      <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.08)', margin: '4px 6px' }} />
+
+      {/* 7. Copy Link */}
       <button
         type="button"
         onClick={handleCopyLink}
@@ -179,7 +285,7 @@ export const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         <span>{copied ? 'Link Copied!' : 'Copy Link'}</span>
       </button>
 
-      {/* 5. Open in YouTube */}
+      {/* 8. Open in YouTube */}
       <button
         type="button"
         onClick={handleOpenYouTube}
@@ -215,10 +321,10 @@ const menuItemStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: '10px',
   padding: '8px 12px',
-  borderRadius: '8px',
+  borderRadius: '10px',
   border: 'none',
   background: 'transparent',
-  color: 'var(--md-sys-color-on-surface, #e6e1e5)',
+  color: '#F3F4F6',
   fontSize: '13px',
   fontWeight: 600,
   cursor: 'pointer',

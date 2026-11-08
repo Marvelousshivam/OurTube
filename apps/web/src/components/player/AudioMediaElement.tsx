@@ -47,6 +47,7 @@ export const AudioMediaElement: React.FC = () => {
 
     if (!streamAudioUrl || playbackMode !== 'music') {
       if (audio.src) {
+        audio.pause();
         audio.removeAttribute('src');
         audio.load();
       }
@@ -155,11 +156,12 @@ export const AudioMediaElement: React.FC = () => {
 
   // Handle Programmatic Seek
   useEffect(() => {
+    if (playbackMode !== 'music') return;
     const audio = audioRef.current;
     if (audio && streamAudioUrl && audio.src && Math.abs(audio.currentTime - currentTime) > 1.5) {
       audio.currentTime = currentTime;
     }
-  }, [currentTime, streamAudioUrl]);
+  }, [currentTime, streamAudioUrl, playbackMode]);
 
   // Guarded track completion handler to prevent cascade skipping
   const handleEnded = () => {
@@ -199,6 +201,7 @@ export const AudioMediaElement: React.FC = () => {
   };
 
   const handleError = () => {
+    if (playbackMode !== 'music') return;
     const audio = audioRef.current;
     console.warn('[OurTube Audio] Audio stream error encountered:', audio?.error);
     setBuffering(false);
@@ -209,7 +212,7 @@ export const AudioMediaElement: React.FC = () => {
       <audio
         ref={audioRef}
         onTimeUpdate={() => {
-          if (audioRef.current && streamAudioUrl) {
+          if (playbackMode === 'music' && audioRef.current && streamAudioUrl) {
             const cur = audioRef.current.currentTime || 0;
             const dur = audioRef.current.duration || currentTrack?.duration || 0;
             updatePlaybackProgress(cur, dur);
@@ -232,8 +235,15 @@ export const AudioMediaElement: React.FC = () => {
             }
           }
         }}
-        onWaiting={() => setBuffering(true)}
-        onPlaying={() => setBuffering(false)}
+        onWaiting={() => {
+          if (playbackMode === 'music') setBuffering(true);
+        }}
+        onPlaying={() => {
+          if (playbackMode === 'music') setBuffering(false);
+        }}
+        onCanPlay={() => {
+          if (playbackMode === 'music') setBuffering(false);
+        }}
         onEnded={handleEnded}
         onError={handleError}
         preload="auto"

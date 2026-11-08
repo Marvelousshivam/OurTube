@@ -1,10 +1,30 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { VideoItem, TopicChip } from '../types';
 import { innertubeService } from '../api/innertubeService';
 import { VideoCard } from '../components/video/VideoCard';
 import { VideoCardSkeleton } from '../components/video/VideoCardSkeleton';
+import { VideoCinemaStage } from '../components/video/VideoCinemaStage';
 import { bridgeClient } from '../api/bridgeClient';
 import { M3LoadingIndicator } from '../components/common/M3LoadingIndicator';
+import { useTasteStore } from '../store/tasteStore';
+import { usePlayerStore } from '../store/playerStore';
+
+type DurationFilter = 'any' | 'short' | 'mid' | 'long';
+
+const DURATION_FILTERS: { id: DurationFilter; label: string }[] = [
+  { id: 'any', label: 'Any length' },
+  { id: 'short', label: '< 5 min' },
+  { id: 'mid', label: '5–20 min' },
+  { id: 'long', label: '20+ min' }
+];
+
+const matchesDuration = (v: VideoItem, f: DurationFilter) => {
+  const d = v.duration || 0;
+  if (f === 'short') return d > 0 && d < 300;
+  if (f === 'mid') return d >= 300 && d <= 1200;
+  if (f === 'long') return d > 1200;
+  return true;
+};
 
 interface VideoHomePageProps {
   onPlayVideo: (video: VideoItem) => void;
@@ -21,6 +41,10 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [continuationToken, setContinuationToken] = useState<string | undefined>(undefined);
+  const [durationFilter, setDurationFilter] = useState<DurationFilter>('any');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { videoHistory, syncSubscribedChannels } = useTasteStore();
+  const { openChannel } = usePlayerStore();
 
   // Chips horizontal scroll state
   const chipsScrollRef = useRef<HTMLDivElement>(null);
@@ -64,24 +88,40 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
       return;
     }
 
-    const targetParam = chip && chip.id !== 'all' ? (chip.params || chip.title) : undefined;
+    // Pre-sync YouTube subscribed channels in the background so ChannelSheet knows subscription status
     innertubeService
-      .getVideoHomeFeed(targetParam)
+      .getSubscriptionsFeed()
+      .then((res) => {
+        if (res.channels && res.channels.length > 0) {
+          syncSubscribedChannels(res.channels);
+        }
+      })
+      .catch(() => {});
+
+    const chipFilter =
+      chip && chip.id !== 'all'
+        ? { params: chip.params, continuationToken: chip.continuationToken, title: chip.title }
+        : undefined;
+    innertubeService
+      .getVideoHomeFeed(chipFilter)
       .then((res) => {
         setVideos(res.videos);
         setContinuationToken(res.continuationToken);
 
-        if (res.chips && res.chips.length > 0) {
+        // Keep the existing chip rail when filtering so the selection doesn't jump
+        if (!chipFilter && res.chips && res.chips.length > 0) {
           const hasAll = res.chips.some((c) => c.id === 'all' || c.title.toLowerCase() === 'all');
           const finalChips = hasAll ? res.chips : [{ id: 'all', title: 'All' }, ...res.chips];
           setChips(finalChips);
         }
         setLoading(false);
+        setIsRefreshing(false);
         setTimeout(checkScrollable, 200);
       })
       .catch((err) => {
         console.warn('[VideoHome] Error fetching home video feed:', err);
         setLoading(false);
+        setIsRefreshing(false);
       });
   };
 
@@ -157,6 +197,63 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
     return () => observer.disconnect();
   }, [continuationToken, loading, isLoadingMore]);
 
+  // Local resume targets (partially watched, most recent first)
+  const resumeItems = useMemo<VideoItem[]>(
+    () =>
+      videoHistory
+        .filter((h) => (h.watchedPercentage || 0) > 3 && (h.watchedPercentage || 0) < 95 && (h.resumeTimeSeconds || 0) > 5)
+        .slice(0, 4)
+        .map((h) => {
+          const d = h.duration || 0;
+          return {
+            id: h.id,
+            title: h.title,
+            channelName: h.channelName,
+            channelId: h.channelId,
+            channelIconUrl: h.channelIconUrl,
+            thumbnailUrl: h.thumbnailUrl,
+            duration: d,
+            durationFormatted: d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, '0')}` : '',
+            viewCount: h.viewCountText || '',
+            watchedPercentage: h.watchedPercentage
+          };
+        }),
+    [videoHistory]
+  );
+
+  const filteredVideos = useMemo(() => {
+    const byDuration = videos.filter((v) => matchesDuration(v, durationFilter));
+    const nonMembers = byDuration.filter((v) => !v.isMembersOnly);
+    return nonMembers.length >= 4 ? nonMembers : byDuration;
+  }, [videos, durationFilter]);
+
+  // Unique creators in feed for quick channel discovery rail
+  const activeCreators = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { id?: string; name: string; avatarUrl?: string; isVerified?: boolean }[] = [];
+    for (const v of filteredVideos) {
+      const key = (v.channelName || '').toLowerCase().trim();
+      if (!key || key === 'youtube creator' || seen.has(key)) continue;
+      seen.add(key);
+      list.push({
+        id: v.channelId,
+        name: v.channelName,
+        avatarUrl: v.channelIconUrl,
+        isVerified: v.isVerified
+      });
+      if (list.length >= 12) break;
+    }
+    return list;
+  }, [filteredVideos]);
+
+  const showStage = !isSubscriptions && selectedChipId === 'all' && filteredVideos.length > 0;
+  const stageLead = showStage ? filteredVideos[0] : null;
+  const stageUpNext = showStage ? filteredVideos.slice(1, 5) : [];
+  const stageIds = new Set(
+    showStage ? [stageLead!.id, ...stageUpNext.slice(0, Math.max(0, 3 - resumeItems.length)).map((v) => v.id)] : []
+  );
+  const gridVideos = showStage ? filteredVideos.filter((v) => !stageIds.has(v.id)) : filteredVideos;
+
   return (
     <div
       style={{
@@ -164,187 +261,301 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
         animation: 'kodaFadeIn 280ms cubic-bezier(0.16, 1, 0.3, 1)'
       }}
     >
-      {/* Top Title & Refresh Row */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: isSubscriptions ? '20px' : '14px',
-          marginTop: '4px'
-        }}
-      >
-        <h1
-          style={{
-            margin: 0,
-            fontSize: '22px',
-            fontWeight: 800,
-            letterSpacing: '-0.02em',
-            color: 'var(--md-sys-color-on-surface, #e6e1e5)'
-          }}
-        >
-          {isSubscriptions ? 'Subscriptions' : 'Recommended For You'}
-        </h1>
-
-        <button
-          onClick={() => loadFeed(chips.find((c) => c.id === selectedChipId))}
-          title="Refresh Feed"
-          style={{
-            background: 'none',
-            backgroundColor: 'transparent',
-            border: 'none',
-            color: 'var(--md-sys-color-on-surface-variant)',
-            cursor: 'pointer',
-            padding: '6px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            outline: 'none',
-            transition: 'transform 200ms ease, background-color 150ms ease'
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high)')}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-        >
-          <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
-            refresh
-          </span>
-        </button>
-      </div>
-
-      {/* Topic Filter Chips Carousel (Shown on Home Feed, matching YouTube & Koda) */}
-      {!isSubscriptions && chips.length > 0 && (
+      {/* Unified Contained M3 Expressive Filter & Topic Bar (Zero uncontained black space) */}
+      {isSubscriptions ? (
         <div
           style={{
-            position: 'relative',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             marginBottom: '16px'
           }}
         >
-          {/* Left Arrow with Fade Gradient Mask */}
-          {canScrollLeft && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                bottom: '14px',
-                zIndex: 10,
-                display: 'flex',
-                alignItems: 'center',
-                paddingRight: '24px',
-                background: 'linear-gradient(90deg, var(--md-sys-color-background, #121316) 65%, transparent 100%)'
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => scrollChips('left')}
-                title="Scroll left"
-                style={navArrowButtonStyle}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-highest, rgba(255,255,255,0.18))')}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high, rgba(255,255,255,0.1))')}
-              >
-                <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
-                  chevron_left
-                </span>
-              </button>
-            </div>
-          )}
-
-          {/* Chips Scrollable Container */}
-          <div
-            ref={chipsScrollRef}
+          <h1
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              overflowX: 'auto',
-              paddingBottom: '14px',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              width: '100%',
-              scrollBehavior: 'smooth'
+              margin: 0,
+              fontSize: '22px',
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+              color: 'var(--md-sys-color-on-surface, #e6e1e5)'
             }}
           >
-            {chips.map((chip) => {
-              const isSelected = chip.id === selectedChipId;
-              return (
-                <button
-                  key={chip.id}
-                  type="button"
-                  onClick={() => handleSelectChip(chip)}
-                  style={{
-                    padding: isSelected ? '7px 18px' : '7px 16px',
-                    borderRadius: isSelected ? '14px' : '9999px',
-                    fontSize: '13px',
-                    fontWeight: isSelected ? 750 : 500,
-                    whiteSpace: 'nowrap',
-                    cursor: 'pointer',
-                    border: isSelected
-                      ? '1px solid var(--md-sys-color-primary)'
-                      : '1px solid var(--md-sys-color-outline-variant, rgba(255,255,255,0.12))',
-                    backgroundColor: isSelected
-                      ? 'var(--md-sys-color-secondary-container, #ffd8e4)'
-                      : 'var(--md-sys-color-surface-container, rgba(255,255,255,0.06))',
-                    color: isSelected
-                      ? 'var(--md-sys-color-on-secondary-container, #381e72)'
-                      : 'var(--md-sys-color-on-surface, #e6e1e5)',
-                    boxShadow: isSelected
-                      ? '0 2px 10px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.2))'
-                      : 'none',
-                    outline: 'none',
-                    transition: 'border-radius 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 180ms ease, transform 150ms ease',
-                    flexShrink: 0
-                  }}
-                  onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.94)')}
-                  onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high, rgba(255,255,255,0.1))';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container, rgba(255,255,255,0.06))';
-                    }
-                  }}
-                >
-                  {chip.title}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Right Arrow with Fade Gradient Mask */}
-          {canScrollRight && (
-            <div
+            Subscriptions
+          </h1>
+          <button
+            onClick={() => {
+              setIsRefreshing(true);
+              loadFeed();
+            }}
+            title="Refresh Feed"
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--md-sys-color-surface-container)',
+              border: '1px solid var(--md-sys-color-outline-variant)',
+              color: 'var(--md-sys-color-on-surface-variant)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <span
+              className="material-symbols-rounded"
               style={{
-                position: 'absolute',
-                right: 0,
-                top: 0,
-                bottom: '14px',
-                zIndex: 10,
-                display: 'flex',
-                alignItems: 'center',
-                paddingLeft: '24px',
-                background: 'linear-gradient(270deg, var(--md-sys-color-background, #121316) 65%, transparent 100%)'
+                fontSize: '19px',
+                animation: isRefreshing ? 'otSpin 800ms linear infinite' : 'none'
               }}
             >
-              <button
-                type="button"
-                onClick={() => scrollChips('right')}
-                title="Scroll right"
-                style={navArrowButtonStyle}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-highest, rgba(255,255,255,0.18))')}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--md-sys-color-surface-container-high, rgba(255,255,255,0.1))')}
+              refresh
+            </span>
+          </button>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '7px 10px',
+            borderRadius: '22px',
+            backgroundColor: 'var(--md-sys-color-surface-container-low)',
+            border: '1px solid var(--md-sys-color-outline-variant)',
+            marginBottom: '16px',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.22)'
+          }}
+        >
+          {/* Left: Scrollable Topic Filter Chips */}
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              flex: 1,
+              minWidth: 0
+            }}
+          >
+            {canScrollLeft && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  paddingRight: '20px',
+                  background:
+                    'linear-gradient(90deg, var(--md-sys-color-surface-container-low) 65%, transparent 100%)'
+                }}
               >
-                <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
-                  chevron_right
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => scrollChips('left')}
+                  title="Scroll left"
+                  style={navArrowButtonStyle}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
+                    chevron_left
+                  </span>
+                </button>
+              </div>
+            )}
+
+            <div
+              ref={chipsScrollRef}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                overflowX: 'auto',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                width: '100%',
+                scrollBehavior: 'smooth'
+              }}
+            >
+              {chips.map((chip) => {
+                const isSelected = chip.id === selectedChipId;
+                return (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => handleSelectChip(chip)}
+                    style={{
+                      height: '32px',
+                      padding: isSelected ? '0 16px' : '0 14px',
+                      borderRadius: isSelected ? '12px' : '9999px',
+                      fontSize: '12.5px',
+                      fontWeight: isSelected ? 750 : 500,
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                      border: isSelected
+                        ? '1px solid var(--md-sys-color-primary)'
+                        : '1px solid var(--md-sys-color-outline-variant)',
+                      backgroundColor: isSelected
+                        ? 'var(--md-sys-color-secondary-container)'
+                        : 'var(--md-sys-color-surface-container)',
+                      color: isSelected
+                        ? 'var(--md-sys-color-on-secondary-container)'
+                        : 'var(--md-sys-color-on-surface)',
+                      outline: 'none',
+                      transition:
+                        'border-radius 260ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 180ms ease, transform 150ms ease',
+                      flexShrink: 0
+                    }}
+                    onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.94)')}
+                    onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor =
+                          'var(--md-sys-color-surface-container-high)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor =
+                          'var(--md-sys-color-surface-container)';
+                      }
+                    }}
+                  >
+                    {chip.title}
+                  </button>
+                );
+              })}
             </div>
-          )}
+
+            {canScrollRight && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  paddingLeft: '20px',
+                  background:
+                    'linear-gradient(270deg, var(--md-sys-color-surface-container-low) 65%, transparent 100%)'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => scrollChips('right')}
+                  title="Scroll right"
+                  style={navArrowButtonStyle}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
+                    chevron_right
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Subtle Divider */}
+          <div
+            style={{
+              width: '1px',
+              height: '22px',
+              backgroundColor: 'var(--md-sys-color-outline-variant)',
+              flexShrink: 0
+            }}
+          />
+
+          {/* Right: Duration Quick-Filter + Refresh */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <div
+              role="radiogroup"
+              aria-label="Filter by length"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
+                padding: '3px',
+                borderRadius: '999px',
+                backgroundColor: 'var(--md-sys-color-surface-container)',
+                border: '1px solid var(--md-sys-color-outline-variant)'
+              }}
+            >
+              {DURATION_FILTERS.map((f) => {
+                const active = durationFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setDurationFilter(f.id)}
+                    style={{
+                      height: '26px',
+                      padding: '0 10px',
+                      borderRadius: active ? '9px' : '999px',
+                      border: 'none',
+                      backgroundColor: active
+                        ? 'var(--md-sys-color-primary)'
+                        : 'transparent',
+                      color: active
+                        ? 'var(--md-sys-color-on-primary)'
+                        : 'var(--md-sys-color-on-surface-variant)',
+                      fontSize: '11.5px',
+                      fontWeight: active ? 750 : 500,
+                      fontVariantNumeric: 'tabular-nums',
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                      transition:
+                        'border-radius 240ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 160ms ease'
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => {
+                setIsRefreshing(true);
+                loadFeed(chips.find((c) => c.id === selectedChipId));
+              }}
+              title="Refresh Feed"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--md-sys-color-surface-container)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
+                color: 'var(--md-sys-color-on-surface-variant)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                outline: 'none',
+                transition: 'transform 200ms ease, background-color 150ms ease'
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  'var(--md-sys-color-surface-container-high)')
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  'var(--md-sys-color-surface-container)')
+              }
+            >
+              <span
+                className="material-symbols-rounded"
+                style={{
+                  fontSize: '18px',
+                  animation: isRefreshing ? 'otSpin 800ms linear infinite' : 'none'
+                }}
+              >
+                refresh
+              </span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -393,173 +604,206 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
         </div>
       ) : (
         <>
-          {/* M3 Expressive Featured Video Spotlight Bento Banner (Shown on 'all' chip) */}
-          {!isSubscriptions && selectedChipId === 'all' && videos.length > 0 && (
-            <div
-              onClick={() => onPlayVideo(videos[0])}
-              style={{
-                position: 'relative',
-                borderRadius: '28px',
-                backgroundColor: 'var(--md-sys-color-surface-container-low)',
-                border: '1px solid var(--md-sys-color-outline-variant)',
-                padding: '22px 26px',
-                marginBottom: '26px',
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                gap: '24px',
-                overflow: 'hidden',
-                cursor: 'pointer',
-                boxShadow: '0 12px 36px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.22))',
-                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)'
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-3px)')}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-            >
-              {/* Ambient Blurred Backdrop */}
-              <img
-                src={videos[0].thumbnailUrl}
-                alt=""
-                referrerPolicy="no-referrer"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  opacity: 0.14,
-                  filter: 'blur(40px) saturate(160%)',
-                  pointerEvents: 'none'
-                }}
-              />
+          {/* Editorial cinema stage: lead frame + continue-watching / up-next stack */}
+          {showStage && stageLead && (
+            <VideoCinemaStage
+              lead={stageLead}
+              resumeItems={resumeItems}
+              upNext={stageUpNext}
+              onPlayVideo={onPlayVideo}
+            />
+          )}
 
-              {/* Left 16:9 Thumbnail Preview */}
+          {/* M3 Expressive Creators Quick-Access Rail */}
+          {!isSubscriptions && activeCreators.length >= 4 && (
+            <section style={{ marginBottom: '28px' }}>
               <div
                 style={{
-                  position: 'relative',
-                  width: '320px',
-                  maxWidth: '100%',
-                  aspectRatio: '16 / 9',
-                  borderRadius: '18px',
-                  overflow: 'hidden',
-                  backgroundColor: 'var(--md-sys-color-surface-container-high)',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.38)',
-                  flexShrink: 0,
-                  zIndex: 1
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px'
                 }}
               >
-                <img
-                  src={videos[0].thumbnailUrl}
-                  alt={videos[0].title}
-                  referrerPolicy="no-referrer"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-                {videos[0].durationFormatted && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      bottom: '8px',
-                      right: '8px',
-                      padding: '3px 8px',
-                      borderRadius: '8px',
-                      backgroundColor: 'rgba(12, 14, 19, 0.82)',
-                      color: '#ffffff',
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      fontVariantNumeric: 'tabular-nums'
-                    }}
-                  >
-                    {videos[0].durationFormatted}
-                  </span>
-                )}
-              </div>
-
-              {/* Right Spotlight Details & Action */}
-              <div style={{ flex: 1, minWidth: '240px', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span
+                    className="material-symbols-rounded filled"
+                    style={{ fontSize: '19px', color: 'var(--md-sys-color-primary)' }}
+                  >
+                    subscriptions
+                  </span>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: '17px',
+                      fontWeight: 800,
+                      letterSpacing: '-0.015em',
+                      color: 'var(--md-sys-color-on-surface)'
+                    }}
+                  >
+                    Creators in Your Feed
+                  </h2>
+                </div>
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--md-sys-color-on-surface-variant)'
+                  }}
+                >
+                  Tap to open channel
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  overflowX: 'auto',
+                  paddingBottom: '6px',
+                  scrollbarWidth: 'none'
+                }}
+              >
+                {activeCreators.map((creator) => (
+                  <button
+                    key={creator.name}
+                    type="button"
+                    onClick={() =>
+                      openChannel({
+                        id: creator.id,
+                        name: creator.name,
+                        avatarUrl: creator.avatarUrl
+                      })
+                    }
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '5px',
-                      padding: '4px 10px',
+                      gap: '10px',
+                      padding: '6px 14px 6px 6px',
                       borderRadius: '9999px',
-                      backgroundColor: 'var(--md-sys-color-primary-container)',
-                      color: 'var(--md-sys-color-on-primary-container)',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      letterSpacing: '0.06em',
-                      textTransform: 'uppercase'
+                      backgroundColor: 'var(--md-sys-color-surface-container)',
+                      border: '1px solid var(--md-sys-color-outline-variant)',
+                      color: 'var(--md-sys-color-on-surface)',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      transition:
+                        'border-radius 260ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 180ms ease, transform 180ms ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor =
+                        'var(--md-sys-color-surface-container-high)';
+                      e.currentTarget.style.borderRadius = '16px';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor =
+                        'var(--md-sys-color-surface-container)';
+                      e.currentTarget.style.borderRadius = '9999px';
+                      e.currentTarget.style.transform = 'translateY(0)';
                     }}
                   >
-                    <span className="material-symbols-rounded filled" style={{ fontSize: '14px' }}>
-                      auto_awesome
+                    <span
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        backgroundColor: 'var(--md-sys-color-secondary-container)',
+                        color: 'var(--md-sys-color-on-secondary-container)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        flexShrink: 0
+                      }}
+                    >
+                      {creator.avatarUrl ? (
+                        <img
+                          src={creator.avatarUrl}
+                          alt=""
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        creator.name.slice(0, 2).toUpperCase()
+                      )}
                     </span>
-                    Featured Pick
-                  </span>
-                  {videos[0].uploadedDate && (
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-on-surface-variant)' }}>
-                      {videos[0].uploadedDate}
-                    </span>
-                  )}
-                </div>
 
+                    <span
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                        maxWidth: '150px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}
+                    >
+                      {creator.name}
+                    </span>
+
+                    {creator.isVerified && (
+                      <span
+                        className="material-symbols-rounded filled"
+                        style={{
+                          fontSize: '14px',
+                          color: 'var(--md-sys-color-primary)',
+                          flexShrink: 0
+                        }}
+                      >
+                        check_circle
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Section Header for Feed Grid */}
+          {!isSubscriptions && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '14px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  className="material-symbols-rounded filled"
+                  style={{ fontSize: '20px', color: 'var(--md-sys-color-primary)' }}
+                >
+                  smart_display
+                </span>
                 <h2
                   style={{
                     margin: 0,
-                    fontSize: 'clamp(18px, 2vw, 22px)',
+                    fontSize: '18px',
                     fontWeight: 800,
-                    lineHeight: 1.25,
-                    color: 'var(--md-sys-color-on-surface)',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden'
+                    letterSpacing: '-0.015em',
+                    color: 'var(--md-sys-color-on-surface)'
                   }}
                 >
-                  {videos[0].title}
+                  {selectedChipId === 'all'
+                    ? 'More For You'
+                    : chips.find((c) => c.id === selectedChipId)?.title || 'Videos'}
                 </h2>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '13px', fontWeight: 600 }}>
-                  <span>{videos[0].channelName}</span>
-                  {videos[0].viewCount && (
-                    <>
-                      <span>•</span>
-                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{videos[0].viewCount}</span>
-                    </>
-                  )}
-                </div>
-
-                <div style={{ marginTop: '4px' }}>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPlayVideo(videos[0]);
-                    }}
-                    style={{
-                      height: '44px',
-                      padding: '0 22px',
-                      borderRadius: '9999px',
-                      backgroundColor: 'var(--md-sys-color-primary)',
-                      color: 'var(--md-sys-color-on-primary)',
-                      border: 'none',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      fontSize: '13.5px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)'
-                    }}
-                  >
-                    <span className="material-symbols-rounded filled" style={{ fontSize: '20px' }}>
-                      play_arrow
-                    </span>
-                    <span>Watch Now</span>
-                  </button>
-                </div>
               </div>
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: 'var(--md-sys-color-on-surface-variant)',
+                  fontVariantNumeric: 'tabular-nums'
+                }}
+              >
+                {gridVideos.length} videos
+              </span>
             </div>
           )}
 
@@ -571,7 +815,7 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
               gap: '26px 20px'
             }}
           >
-            {(!isSubscriptions && selectedChipId === 'all' ? videos.slice(1) : videos).map((video) => (
+            {gridVideos.map((video) => (
               <VideoCard
                 key={video.id}
                 video={video}
@@ -610,6 +854,7 @@ export const VideoHomePage: React.FC<VideoHomePageProps> = ({
           from { opacity: 0; transform: translateY(6px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes otSpin { to { transform: rotate(360deg); } }
       `}</style>
     </div>
   );

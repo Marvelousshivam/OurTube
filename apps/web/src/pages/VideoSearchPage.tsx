@@ -12,6 +12,7 @@ import { VideoCard } from '../components/video/VideoCard';
 import { VideoCardSkeleton } from '../components/video/VideoCardSkeleton';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTasteStore } from '../store/tasteStore';
+import { usePlayerStore } from '../store/playerStore';
 
 export interface VideoSearchPageProps {
   onPlayVideo: (video: VideoItem) => void;
@@ -744,9 +745,16 @@ export const VideoSearchPage: React.FC<VideoSearchPageProps> = ({
                             alignItems: 'center',
                             gap: '12px',
                             minWidth: 0,
-                            cursor: onOpenChannel ? 'pointer' : 'default'
+                            cursor: 'pointer'
                           }}
-                          onClick={() => onOpenChannel?.(channel.id)}
+                          onClick={() => {
+                            usePlayerStore.getState().openChannel({
+                              id: channel.id,
+                              name: channel.name,
+                              avatarUrl: channel.avatarUrl
+                            });
+                            onOpenChannel?.(channel.id);
+                          }}
                         >
                           <img
                             src={

@@ -77,7 +77,7 @@ export const FloatingNavigationDock: React.FC<FloatingNavigationDockProps> = ({
           boxShadow: '0 1px 4px var(--md-sys-elevation-shadow, rgba(0, 0, 0, 0.08))',
           opacity: isPillVisible ? 1 : 0,
           transition:
-            'transform 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease',
+            'transform 380ms cubic-bezier(0.34, 1.38, 0.64, 1), width 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease',
           pointerEvents: 'none',
           zIndex: 0
         }}

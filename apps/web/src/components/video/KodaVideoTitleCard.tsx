@@ -166,11 +166,14 @@ export const KodaVideoTitleCard: React.FC<KodaVideoTitleCardProps> = ({
     <div
       className={className}
       style={{
-        borderRadius: '20px',
+        borderRadius: isExpanded ? '26px' : '20px',
         backgroundColor: 'var(--md-sys-color-surface-container, #1d2024)',
-        border: '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))',
+        border: isExpanded
+          ? '1px solid rgba(168, 199, 250, 0.22)'
+          : '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))',
         overflow: 'hidden',
-        transition: 'all 250ms var(--motion-easing-emphasized, cubic-bezier(0.2, 0, 0, 1))',
+        transition:
+          'border-radius 340ms var(--m3-spring-spatial-default, cubic-bezier(0.34, 1.56, 0.64, 1)), border-color 220ms ease, background-color 220ms ease',
         ...style
       }}
     >
@@ -206,6 +209,7 @@ export const KodaVideoTitleCard: React.FC<KodaVideoTitleCardProps> = ({
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2
+            key={displayTitle}
             style={{
               margin: 0,
               fontSize: '18px',
@@ -217,7 +221,8 @@ export const KodaVideoTitleCard: React.FC<KodaVideoTitleCardProps> = ({
               WebkitLineClamp: isExpanded ? 'none' : 2,
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
-              textOverflow: 'ellipsis'
+              textOverflow: 'ellipsis',
+              animation: 'm3TextSlideUp 260ms var(--m3-ease-emphasized-decelerate, cubic-bezier(0.05, 0.7, 0.1, 1)) both'
             }}
           >
             {displayTitle}
@@ -244,15 +249,33 @@ export const KodaVideoTitleCard: React.FC<KodaVideoTitleCardProps> = ({
         </div>
 
         {canExpand && (
-          <div style={{ flexShrink: 0, paddingTop: '2px' }}>
+          <div
+            style={{
+              flexShrink: 0,
+              width: '32px',
+              height: '32px',
+              borderRadius: isExpanded ? '10px' : '50%',
+              backgroundColor: isExpanded
+                ? 'rgba(168, 199, 250, 0.14)'
+                : 'rgba(255, 255, 255, 0.05)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition:
+                'border-radius 280ms var(--m3-spring-spatial-default, cubic-bezier(0.34, 1.56, 0.64, 1)), background-color 200ms ease'
+            }}
+          >
             <span
               className="material-symbols-rounded"
               style={{
-                fontSize: '24px',
-                color: 'var(--md-sys-color-on-surface-variant, #94a3b8)',
+                fontSize: '22px',
+                color: isExpanded
+                  ? 'var(--md-sys-color-primary, #a8c7fa)'
+                  : 'var(--md-sys-color-on-surface-variant, #94a3b8)',
                 display: 'inline-block',
                 transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 300ms var(--motion-easing-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))'
+                transition:
+                  'transform 360ms var(--m3-spring-spatial-default, cubic-bezier(0.34, 1.56, 0.64, 1)), color 200ms ease'
               }}
             >
               expand_more
@@ -261,111 +284,120 @@ export const KodaVideoTitleCard: React.FC<KodaVideoTitleCardProps> = ({
         )}
       </div>
 
-      {/* Expanded Body: VideoStatTiles + Rich Description */}
-      {isExpanded && (
-        <div
-          style={{
-            padding: '0 16px 16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px',
-            animation: 'kodaWatchFadeIn 200ms ease'
-          }}
-        >
-          {/* VideoStatTiles (Authentic Koda Layout: Stat figures over small words in surfaceContainerHigh) */}
-          {hasStats && (
-            <div style={{ display: 'flex', gap: '10px' }}>
-              {viewsFig && (
-                <div
-                  style={{
-                    flex: 1,
-                    borderRadius: '14px',
-                    backgroundColor: 'var(--md-sys-color-surface-container-high, #282a2f)',
-                    padding: '10px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    textAlign: 'center'
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '18px',
-                      fontWeight: 800,
-                      color: 'var(--md-sys-color-on-surface, #e2e2e9)',
-                      lineHeight: 1.2
-                    }}
-                  >
-                    {viewsFig}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: 'var(--md-sys-color-on-surface-variant, #94a3b8)',
-                      marginTop: '2px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em'
-                    }}
-                  >
-                    {viewsWord || 'views'}
-                  </span>
-                </div>
-              )}
-
-              {dateFig && (
-                <div
-                  style={{
-                    flex: 1,
-                    borderRadius: '14px',
-                    backgroundColor: 'var(--md-sys-color-surface-container-high, #282a2f)',
-                    padding: '10px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    textAlign: 'center'
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '18px',
-                      fontWeight: 800,
-                      color: 'var(--md-sys-color-on-surface, #e2e2e9)',
-                      lineHeight: 1.2
-                    }}
-                  >
-                    {dateFig}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: 'var(--md-sys-color-on-surface-variant, #94a3b8)',
-                      marginTop: '2px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em'
-                    }}
-                  >
-                    {dateWord || 'ago'}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Formatted Description */}
+      {/* Smooth M3 Expressive CSS Grid Accordion Body: VideoStatTiles + Rich Description */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: isExpanded ? '1fr' : '0fr',
+          opacity: isExpanded ? 1 : 0,
+          transition:
+            'grid-template-rows 360ms var(--m3-spring-spatial-slow, cubic-bezier(0.16, 1, 0.3, 1)), opacity 240ms ease'
+        }}
+      >
+        <div style={{ overflow: 'hidden', minHeight: 0 }}>
           <div
             style={{
-              paddingTop: '8px',
-              borderTop: '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))'
+              padding: '0 16px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px'
             }}
           >
-            {renderFormattedDescription(description)}
+            {/* VideoStatTiles (Authentic Koda Layout: Stat figures over small words in surfaceContainerHigh) */}
+            {hasStats && (
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {viewsFig && (
+                  <div
+                    style={{
+                      flex: 1,
+                      borderRadius: '14px',
+                      backgroundColor: 'var(--md-sys-color-surface-container-high, #282a2f)',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 800,
+                        color: 'var(--md-sys-color-on-surface, #e2e2e9)',
+                        lineHeight: 1.2
+                      }}
+                    >
+                      {viewsFig}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: 'var(--md-sys-color-on-surface-variant, #94a3b8)',
+                        marginTop: '2px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                      }}
+                    >
+                      {viewsWord || 'views'}
+                    </span>
+                  </div>
+                )}
+
+                {dateFig && (
+                  <div
+                    style={{
+                      flex: 1,
+                      borderRadius: '14px',
+                      backgroundColor: 'var(--md-sys-color-surface-container-high, #282a2f)',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 800,
+                        color: 'var(--md-sys-color-on-surface, #e2e2e9)',
+                        lineHeight: 1.2
+                      }}
+                    >
+                      {dateFig}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: 'var(--md-sys-color-on-surface-variant, #94a3b8)',
+                        marginTop: '2px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                      }}
+                    >
+                      {dateWord || 'ago'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Formatted Description */}
+            <div
+              style={{
+                paddingTop: '8px',
+                borderTop: '1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08))'
+              }}
+            >
+              {renderFormattedDescription(description)}
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

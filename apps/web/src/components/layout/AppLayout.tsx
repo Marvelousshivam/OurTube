@@ -26,10 +26,86 @@ import { SubscriptionsPage } from '../../pages/SubscriptionsPage';
 import { VideoSearchPage } from '../../pages/VideoSearchPage';
 import { VideoWatchOverlay } from '../video/VideoWatchOverlay';
 import { MiniVideoPlayer } from '../video/MiniVideoPlayer';
-import { usePlayerStore } from '../../store/playerStore';
+import { ChannelSheet } from '../video/ChannelSheet';
+import { usePlayerStore, loadActiveVideoSnapshot } from '../../store/playerStore';
+import { VideoItem } from '../../types';
+
+const VALID_NAV_TABS: NavTab[] = ['home', 'search', 'subscriptions', 'library', 'settings'];
+
+function parseRouteFromWindow(): {
+  tab: NavTab | null;
+  videoId: string | null;
+  startTimeSec: number | null;
+} {
+  if (typeof window === 'undefined') {
+    return { tab: 'home', videoId: null, startTimeSec: null };
+  }
+
+  const rawHash = window.location.hash.replace(/^#\/?/, '');
+  const [hashPath, hashQuery = ''] = rawHash.split('?');
+  const hashParams = new URLSearchParams(hashQuery);
+  const searchParams = new URLSearchParams(window.location.search);
+
+  const videoId =
+    hashParams.get('v') ||
+    searchParams.get('v') ||
+    (hashPath.startsWith('watch/') ? hashPath.slice('watch/'.length) : null);
+
+  const rawTime = hashParams.get('t') || searchParams.get('t');
+  let startTimeSec: number | null = null;
+  if (rawTime) {
+    const numeric = parseInt(rawTime.replace(/s$/i, ''), 10);
+    if (!Number.isNaN(numeric) && numeric >= 0) {
+      startTimeSec = numeric;
+    }
+  }
+
+  const cleanTab = hashPath as NavTab;
+  const tab = VALID_NAV_TABS.includes(cleanTab) ? cleanTab : null;
+
+  return {
+    tab,
+    videoId: videoId ? videoId.trim() : null,
+    startTimeSec
+  };
+}
+
+function resolveVideoItemForId(videoId: string): VideoItem {
+  const fromSnapshot = loadActiveVideoSnapshot(videoId);
+  if (fromSnapshot) return fromSnapshot;
+
+  const fromHistory = useTasteStore
+    .getState()
+    .videoHistory.find((v) => v.id === videoId);
+  if (fromHistory) {
+    return {
+      id: fromHistory.id,
+      title: fromHistory.title,
+      channelName: fromHistory.channelName,
+      channelId: fromHistory.channelId,
+      channelIconUrl: fromHistory.channelIconUrl,
+      duration: fromHistory.duration || 180,
+      durationFormatted: '',
+      thumbnailUrl:
+        fromHistory.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      viewCount: fromHistory.viewCountText || ''
+    };
+  }
+
+  return {
+    id: videoId,
+    title: 'Loading video...',
+    channelName: '',
+    duration: 180,
+    durationFormatted: '',
+    thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    viewCount: ''
+  };
+}
 
 export const AppLayout: React.FC = () => {
   const { playVideo } = usePlayerStore();
+  const hasRestoredInitialUrlRef = useRef(false);
   const [videoMode, setVideoMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('koda_home_mode') === 'video';
@@ -51,11 +127,8 @@ export const AppLayout: React.FC = () => {
   const [bridgeState, setBridgeState] = useState<ExtensionConnectionState>(bridgeClient.getConnectionState());
   const [isBridgeConnected, setIsBridgeConnected] = useState(bridgeClient.getIsAvailable());
   const [currentTab, setCurrentTab] = useState<NavTab>(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash.replace('#', '') as NavTab;
-      if (['home', 'search', 'subscriptions', 'library', 'settings'].includes(hash)) return hash;
-    }
-    return 'home';
+    const parsed = parseRouteFromWindow();
+    return parsed.tab || 'home';
   });
   const [previousTab, setPreviousTab] = useState<NavTab>('home');
 
@@ -118,24 +191,62 @@ export const AppLayout: React.FC = () => {
       discordPresenceManager.init();
     }
 
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '') as NavTab;
-      if (['home', 'search', 'subscriptions', 'library', 'settings'].includes(hash)) {
-        setCurrentTab(hash);
+    const handleUrlRouteSync = () => {
+      const { tab, videoId, startTimeSec } = parseRouteFromWindow();
+      if (videoId) {
+        const playerState = usePlayerStore.getState();
+        if (playerState.currentVideo?.id !== videoId || !playerState.isVideoWatchOpen) {
+          const item = resolveVideoItemForId(videoId);
+          playerState.playVideo(item);
+          if (startTimeSec !== null && startTimeSec > 0) {
+            playerState.seek(startTimeSec);
+          }
+        }
+        return;
+      }
+
+      // Navigated back from #watch?v=... to a normal tab (#home, #subscriptions, etc.)
+      const playerState = usePlayerStore.getState();
+      if (playerState.isVideoWatchOpen) {
+        usePlayerStore.setState({
+          isVideoWatchOpen: false,
+          isMiniVideoPlayerOpen: Boolean(playerState.currentVideo)
+        });
+      }
+
+      if (tab) {
+        setCurrentTab(tab);
         setViewingPlaylist(null);
         setViewingArtist(null);
       }
     };
 
-    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('hashchange', handleUrlRouteSync);
+    window.addEventListener('popstate', handleUrlRouteSync);
 
     return () => {
       unsubState();
       unsubAvail();
       discordPresenceManager.destroy();
-      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('hashchange', handleUrlRouteSync);
+      window.removeEventListener('popstate', handleUrlRouteSync);
     };
   }, []);
+
+  // Restore active video from URL (#watch?v=<videoId>) on initial page load / refresh once bridge is connected
+  useEffect(() => {
+    if (!isBridgeConnected || hasRestoredInitialUrlRef.current) return;
+    hasRestoredInitialUrlRef.current = true;
+
+    const { videoId, startTimeSec } = parseRouteFromWindow();
+    if (videoId) {
+      const item = resolveVideoItemForId(videoId);
+      playVideo(item);
+      if (startTimeSec !== null && startTimeSec > 0) {
+        usePlayerStore.getState().seek(startTimeSec);
+      }
+    }
+  }, [isBridgeConnected, playVideo]);
 
   const handleViewportScroll = (e: React.UIEvent<HTMLElement>) => {
     const current = e.currentTarget.scrollTop;
@@ -246,7 +357,7 @@ export const AppLayout: React.FC = () => {
           flex: 1,
           height: '100%',
           overflowY: 'auto',
-          padding: '24px 36px 160px 36px',
+          padding: '18px 36px 160px 36px',
           position: 'relative',
           display: 'flex',
           flexDirection: 'column'
@@ -258,7 +369,7 @@ export const AppLayout: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: '24px',
+            marginBottom: '14px',
             zIndex: 30,
             gap: '16px'
           }}
@@ -520,6 +631,7 @@ export const AppLayout: React.FC = () => {
 
       {/* Floating Mini Video Player */}
       <MiniVideoPlayer />
+      <ChannelSheet />
 
       {/* Notifications Bottom Sheet (Matching Koda) */}
       <NotificationsSheet

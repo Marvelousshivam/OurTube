@@ -615,24 +615,71 @@ export class InnertubeService {
 
   /**
    * Fetches personalized YouTube Video Home feed (FEwhat_to_watch) matching Koda VideoHomeContent
-   * Supports topic filter chips (params) and returns both videos and chips.
+   * Supports topic filter chips (continuationToken, browse params, or topic title) and returns both videos and chips.
    */
-  public async getVideoHomeFeed(params?: string): Promise<VideoFeedResult> {
-    const bodyPayload: any = {
-      browseId: 'FEwhat_to_watch'
-    };
+  public async getVideoHomeFeed(
+    filter?: string | { params?: string; continuationToken?: string; title?: string }
+  ): Promise<VideoFeedResult> {
+    const filterObj =
+      typeof filter === 'string'
+        ? filter.length > 36
+          ? { continuationToken: filter }
+          : /^[A-Za-z0-9_%=-]+$/.test(filter) && filter.length >= 8 && !filter.includes(' ')
+          ? { params: filter }
+          : { title: filter }
+        : filter || {};
 
-    if (params) {
-      bodyPayload.params = params;
+    let data: any = null;
+    let videos: VideoItem[] = [];
+    let chips: TopicChip[] = [];
+
+    // 1A. If chip provides a continuationToken, fetch the continuation directly
+    if (filterObj.continuationToken) {
+      try {
+        const contRes = await this.getVideoContinuation(filterObj.continuationToken);
+        if (contRes.videos.length > 0) {
+          videos = contRes.videos;
+        }
+      } catch (contErr) {
+        console.warn('[InnertubeService] Chip continuation error:', contErr);
+      }
     }
 
-    let data = await this.fetchDesktopYouTubeEndpoint('browse', bodyPayload);
+    // 1B. Standard browse request (either default home feed or valid protobuf params)
+    if (videos.length === 0 && (!filterObj.title || filterObj.params)) {
+      const bodyPayload: any = {
+        browseId: 'FEwhat_to_watch'
+      };
+      if (filterObj.params) {
+        bodyPayload.params = filterObj.params;
+      }
+      data = await this.fetchDesktopYouTubeEndpoint('browse', bodyPayload);
+      videos = data ? this.parseVideoItemsFromBrowse(data) : [];
+      chips = data ? this.parseChipsFromBrowse(data) : [];
+    }
 
-    let videos = data ? this.parseVideoItemsFromBrowse(data) : [];
-    const chips = data ? this.parseChipsFromBrowse(data) : [];
+    // 1C. Topic chip search: if user clicked a topic chip and continuation/browse returned < 6 items, search topic directly
+    if (videos.length < 6 && filterObj.title && filterObj.title.toLowerCase() !== 'all') {
+      try {
+        const searchRes = await this.searchVideos(filterObj.title, { category: 'videos' });
+        if (searchRes.videos.length > 0) {
+          const existingIds = new Set(videos.map((v) => v.id));
+          for (const sv of searchRes.videos) {
+            if (!existingIds.has(sv.id)) {
+              existingIds.add(sv.id);
+              videos.push(sv);
+            }
+          }
+        }
+      } catch (topicSearchErr) {
+        console.warn('[InnertubeService] Topic search fallback error:', topicSearchErr);
+      }
+    }
+
+    const isUnfiltered = !filterObj.params && !filterObj.continuationToken && !filterObj.title;
 
     // 2. Fallback: If account has empty watch history (e.g. secondary account), fetch official YouTube Trending feed
-    if (videos.length < 8 && !params) {
+    if (videos.length < 8 && isUnfiltered) {
       try {
         const trendingData = await this.fetchDesktopYouTubeEndpoint('browse', {
           browseId: 'FEtrending'
@@ -655,7 +702,7 @@ export class InnertubeService {
     }
 
     // 3. Fallback: If still fewer than 8 videos, scrape YouTube homepage initial data
-    if (videos.length < 8 && !params && bridgeClient.getIsAvailable()) {
+    if (videos.length < 8 && isUnfiltered && bridgeClient.getIsAvailable()) {
       try {
         const scrapedData = await bridgeClient.scrapeYouTubePage('https://www.youtube.com/');
         if (scrapedData) {
@@ -678,7 +725,7 @@ export class InnertubeService {
     // 4. Guarantee feed density: If still fewer than 8 videos, supplement with diverse multi-topic recommendations
     if (videos.length < 8) {
       try {
-        const fallbackVideos = await this.getDiverseFallbackVideos(params);
+        const fallbackVideos = await this.getDiverseFallbackVideos(filterObj.title);
         const existingIds = new Set(videos.map((v) => v.id));
         for (const fv of fallbackVideos) {
           if (!existingIds.has(fv.id)) {
@@ -697,6 +744,223 @@ export class InnertubeService {
       videos,
       chips: chips.length > 0 ? chips : this.getDefaultTopicChips(),
       continuationToken
+    };
+  }
+
+  /**
+   * Fetches a YouTube Channel's profile metadata and videos by channelId or channelName
+   */
+  public async getChannelVideos(
+    channelId?: string,
+    channelName?: string
+  ): Promise<{
+    id: string;
+    name: string;
+    avatarUrl?: string;
+    bannerUrl?: string;
+    subscriberCountText?: string;
+    description?: string;
+    isSubscribed?: boolean;
+    videos: VideoItem[];
+  }> {
+    let videos: VideoItem[] = [];
+    let resolvedName =
+      (channelName || 'Creator').replace(/\s+and\s+\d+\s+more$/i, '').trim() || 'Creator';
+    let resolvedId =
+      channelId || `ch_${resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    let avatarUrl: string | undefined;
+    let bannerUrl: string | undefined;
+    let subscriberCountText: string | undefined;
+    let description: string | undefined;
+    let isSubscribed = false;
+
+    const normalizeUrl = (u?: string) => {
+      if (!u || typeof u !== 'string') return undefined;
+      if (u.startsWith('//')) return `https:${u}`;
+      return u;
+    };
+
+    if (channelId && channelId.startsWith('UC')) {
+      try {
+        // Fetch Videos tab (params: EgZ2aWRlb3PyBgQKAjoA) or main channel browse
+        const data = await this.fetchDesktopYouTubeEndpoint('browse', {
+          browseId: channelId,
+          params: 'EgZ2aWRlb3PyBgQKAjoA'
+        });
+        if (data) {
+          videos = this.parseVideoItemsFromBrowse(data);
+
+          const metaRenderer = data.metadata?.channelMetadataRenderer;
+          const microRenderer = data.microformat?.microformatDataRenderer;
+          const c4Header = data.header?.c4TabbedHeaderRenderer;
+          const pageHeader = data.header?.pageHeaderRenderer?.content?.pageHeaderViewModel;
+
+          const titleText =
+            metaRenderer?.title ||
+            pageHeader?.title?.dynamicTextViewModel?.text?.content ||
+            this.getNodeText(c4Header?.title) ||
+            this.getNodeText(pageHeader?.title) ||
+            microRenderer?.title;
+          if (titleText && typeof titleText === 'string' && titleText.trim()) {
+            resolvedName = titleText.trim();
+          }
+
+          if (metaRenderer?.externalId && metaRenderer.externalId.startsWith('UC')) {
+            resolvedId = metaRenderer.externalId;
+          }
+
+          // Extract Avatar from all modern & classic header locations
+          const avSources =
+            pageHeader?.image?.decoratedAvatarViewModel?.avatar?.avatarViewModel?.image?.sources ||
+            pageHeader?.image?.contentPreviewImageViewModel?.image?.sources ||
+            metaRenderer?.avatar?.thumbnails ||
+            c4Header?.avatar?.thumbnails ||
+            microRenderer?.thumbnail?.thumbnails;
+          if (Array.isArray(avSources) && avSources.length > 0) {
+            avatarUrl = normalizeUrl(avSources.slice(-1)[0]?.url || avSources[0]?.url);
+          }
+
+          // Extract Banner from modern & classic header locations
+          const banSources =
+            pageHeader?.banner?.imageBannerViewModel?.image?.sources ||
+            c4Header?.banner?.thumbnails ||
+            c4Header?.tvBanner?.thumbnails;
+          if (Array.isArray(banSources) && banSources.length > 0) {
+            bannerUrl = normalizeUrl(banSources.slice(-1)[0]?.url || banSources[0]?.url);
+          }
+
+          // Extract Subscriber count from classic header or pageHeader metadata rows
+          const subText = this.getNodeText(c4Header?.subscriberCountText);
+          if (subText) {
+            subscriberCountText = subText;
+          } else {
+            const metaRows =
+              pageHeader?.metadata?.contentMetadataViewModel?.metadataRows || [];
+            for (const row of metaRows) {
+              for (const part of row.metadataParts || []) {
+                const txt = this.getNodeText(part?.text || part);
+                if (txt && /subscriber/i.test(txt)) {
+                  subscriberCountText = txt;
+                  break;
+                }
+              }
+              if (subscriberCountText) break;
+            }
+          }
+
+          if (metaRenderer?.description) {
+            description = String(metaRenderer.description).slice(0, 260);
+          } else if (microRenderer?.description) {
+            description = String(microRenderer.description).slice(0, 260);
+          }
+
+          // Detect if the logged-in user is already subscribed to this channel on YouTube
+          const scanSubscribed = (node: any) => {
+            if (!node || isSubscribed || typeof node !== 'object') return;
+            if (node.subscribeButtonRenderer?.subscribed === true) {
+              isSubscribed = true;
+              return;
+            }
+            if (node.subscriptionStateEntity?.subscribed === true) {
+              isSubscribed = true;
+              return;
+            }
+            if (
+              node.subscribeButtonViewModel?.state === 'SUBSCRIBE_BUTTON_STATE_SUBSCRIBED' ||
+              node.subscribeButtonViewModel?.isSubscribed === true
+            ) {
+              isSubscribed = true;
+              return;
+            }
+            if (Array.isArray(node)) {
+              for (const item of node) scanSubscribed(item);
+            } else {
+              for (const k of Object.keys(node)) {
+                if (k !== 'contents' && k !== 'twoColumnBrowseResultsRenderer') {
+                  scanSubscribed(node[k]);
+                }
+              }
+            }
+          };
+          scanSubscribed(data.header);
+          scanSubscribed(data.frameworkUpdates);
+        }
+      } catch (err) {
+        console.warn('[InnertubeService] Channel browse failed, falling back to search:', err);
+      }
+    }
+
+    if ((videos.length < 6 || !avatarUrl) && resolvedName) {
+      try {
+        const searchRes = await this.searchVideos(resolvedName, { category: 'all' });
+        if (searchRes.channels.length > 0) {
+          const matchedCh =
+            searchRes.channels.find(
+              (c) =>
+                (channelId && c.id === channelId) ||
+                c.name.toLowerCase() === resolvedName.toLowerCase()
+            ) || searchRes.channels[0];
+          if (matchedCh) {
+            if (!resolvedId || !resolvedId.startsWith('UC')) resolvedId = matchedCh.id;
+            if (!avatarUrl && matchedCh.avatarUrl) {
+              avatarUrl = normalizeUrl(matchedCh.avatarUrl);
+            }
+          }
+        }
+        if (videos.length < 6) {
+          const existingIds = new Set(videos.map((v) => v.id));
+          const normalizedTarget = resolvedName.toLowerCase();
+          const creatorVideos = searchRes.videos.filter(
+            (v) =>
+              v.channelName.toLowerCase().includes(normalizedTarget) ||
+              normalizedTarget.includes(v.channelName.toLowerCase())
+          );
+          for (const v of [...creatorVideos, ...searchRes.videos]) {
+            if (!existingIds.has(v.id)) {
+              existingIds.add(v.id);
+              if (!avatarUrl && v.channelIconUrl) {
+                avatarUrl = normalizeUrl(v.channelIconUrl);
+              }
+              videos.push(v);
+            }
+          }
+        } else if (!avatarUrl) {
+          const withAvatar = searchRes.videos.find((v) => v.channelIconUrl);
+          if (withAvatar?.channelIconUrl) {
+            avatarUrl = normalizeUrl(withAvatar.channelIconUrl);
+          }
+        }
+      } catch (searchErr) {
+        console.warn('[InnertubeService] Channel search fallback error:', searchErr);
+      }
+    }
+
+    // Channel Videos tab omits redundant channelName & channelIconUrl on each grid card.
+    // Stamp the resolved channel name, ID, and avatar onto every video in this channel sheet!
+    videos = videos.map((v) => {
+      const isGenericOrCollab =
+        !v.channelName ||
+        v.channelName === 'YouTube Creator' ||
+        v.channelName === 'Creator' ||
+        /\band\s+\d+\s+more$/i.test(v.channelName);
+      return {
+        ...v,
+        channelName: isGenericOrCollab ? resolvedName : v.channelName,
+        channelId: v.channelId && v.channelId.startsWith('UC') ? v.channelId : resolvedId,
+        channelIconUrl: normalizeUrl(v.channelIconUrl) || avatarUrl,
+        isVerified: v.isVerified ?? true
+      };
+    });
+
+    return {
+      id: resolvedId,
+      name: resolvedName,
+      avatarUrl,
+      bannerUrl,
+      subscriberCountText,
+      description,
+      isSubscribed,
+      videos
     };
   }
 
@@ -2021,15 +2285,19 @@ export class InnertubeService {
         const title = this.getNodeText(c.text);
         if (title && !seenTitles.has(title.toLowerCase())) {
           seenTitles.add(title.toLowerCase());
-          const params =
+          const continuationToken =
             c.navigationEndpoint?.continuationEndpoint?.continuationCommand?.token ||
+            c.navigationEndpoint?.commandExecutorCommand?.commands?.find(
+              (cmd: any) => cmd.continuationCommand?.token
+            )?.continuationCommand?.token;
+          const browseParams =
             c.navigationEndpoint?.browseEndpoint?.params ||
             c.navigationEndpoint?.searchEndpoint?.params;
           chips.push({
             id: title.toLowerCase().replace(/[^a-z0-9]/g, '_'),
             title,
-            params: params || undefined,
-            continuationToken: c.navigationEndpoint?.continuationEndpoint?.continuationCommand?.token
+            params: browseParams || undefined,
+            continuationToken: continuationToken || undefined
           });
         }
       }
@@ -2096,8 +2364,8 @@ export class InnertubeService {
             thumbnailUrl: t.highResThumbnailUrl || t.thumbnailUrl,
             duration: t.duration || 240,
             durationFormatted: `${Math.floor((t.duration || 240) / 60)}:${String((t.duration || 240) % 60).padStart(2, '0')}`,
-            viewCount: `${Math.floor(Math.random() * 450 + 45)}K views`,
-            uploadedDate: 'Recently'
+            viewCount: '',
+            uploadedDate: undefined
           });
 
           if (results.length >= 24) break;
@@ -2145,6 +2413,9 @@ export class InnertubeService {
 
       const channelThumbnails = vr.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails;
       let channelIconUrl = channelThumbnails?.slice(-1)[0]?.url;
+      if (typeof channelIconUrl === 'string' && channelIconUrl.startsWith('//')) {
+        channelIconUrl = `https:${channelIconUrl}`;
+      }
 
       const viewCount =
         this.getNodeText(vr.viewCountText) ||
@@ -2161,10 +2432,12 @@ export class InnertubeService {
 
       // Check badges (e.g. Members only)
       let badge = '';
-      let isMembersOnly = false;
+      let isMembersOnly = /\b(members?\s*only|early\s+member\s+access|member[s-]?\s*exclusive)\b/i.test(title);
       const badges = vr.badges || [];
       for (const b of badges) {
+        const style = b.metadataBadgeRenderer?.style || b.badgeRenderer?.style || '';
         const lbl = this.getNodeText(b.metadataBadgeRenderer?.label || b.badgeRenderer?.label);
+        if (String(style).includes('MEMBERS_ONLY')) isMembersOnly = true;
         if (lbl) {
           badge = lbl;
           if (lbl.toLowerCase().includes('member')) isMembersOnly = true;
@@ -2219,7 +2492,7 @@ export class InnertubeService {
         thumbnailUrl: bestThumb,
         duration: durationSeconds,
         durationFormatted: durationText || `${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, '0')}`,
-        viewCount: viewCount || 'Recommended',
+        viewCount: viewCount || '',
         uploadedDate: uploadedDate || undefined,
         badge: badge || (isMembersOnly ? 'Members only' : undefined),
         isMembersOnly,
@@ -2230,6 +2503,13 @@ export class InnertubeService {
 
     const parseLockupViewModel = (lvm: any) => {
       if (!lvm) return;
+      if (
+        lvm.contentType === 'LOCKUP_CONTENT_TYPE_PLAYLIST' ||
+        lvm.contentType === 'LOCKUP_CONTENT_TYPE_CHANNEL' ||
+        lvm.contentType === 'LOCKUP_CONTENT_TYPE_ALBUM'
+      ) {
+        return;
+      }
 
       // Extract video ID from every known path
       let videoId = lvm.contentId;
@@ -2267,10 +2547,24 @@ export class InnertubeService {
 
       seenIds.add(videoId);
 
-      // Metadata rows: Channel name, View count, Uploaded date
+      // Metadata rows: Channel name, View count, Uploaded date, and Badges
       let channelName = '';
+      let channelId: string | undefined;
       let viewCount = '';
       let uploadedDate = '';
+      let isMembersOnly = false;
+      let badge = '';
+
+      const isDateToken = (s: string) =>
+        /\b(ago|streamed|streaming|premiere[ds]?|yesterday|today|just now|scheduled|waiting)\b/i.test(s) ||
+        /^\d+\s+(second|minute|hour|day|week|month|year)s?\s+ago$/i.test(s);
+
+      const isViewToken = (s: string) =>
+        /\b(views?|watching|spectateurs|visualizaciones)\b/i.test(s) ||
+        /^\d+([.,]\d+)?\s*[KMBT]\s*(views?|watching)?$/i.test(s);
+
+      const isBadgeToken = (s: string) =>
+        /^(members?\s*only|new|4k|8k|hd|cc|subtitles|live|featured|recommended|fundraiser)$/i.test(s);
 
       const contentMeta = metadata?.metadata?.contentMetadataViewModel;
       const rows = contentMeta?.metadataRows || contentMeta?.rowItems || [];
@@ -2278,19 +2572,72 @@ export class InnertubeService {
         for (const row of rows) {
           const parts = row.metadataParts || row.items || [];
           for (const part of parts) {
-            const txt = this.getNodeText(part.text || part);
-            if (!txt) continue;
-            if (!channelName) {
-              channelName = txt;
-            } else if (!viewCount && (txt.toLowerCase().includes('view') || txt.toLowerCase().includes('watching') || /^\d+[\.,]?\d*\s*[KMB]?/i.test(txt))) {
-              viewCount = txt;
-            } else if (!uploadedDate && (txt.toLowerCase().includes('ago') || txt.toLowerCase().includes('stream') || txt.toLowerCase().includes('yesterday') || txt.toLowerCase().includes('hour') || txt.toLowerCase().includes('day') || txt.toLowerCase().includes('month') || txt.toLowerCase().includes('year'))) {
-              uploadedDate = txt;
-            } else if (!viewCount) {
-              viewCount = txt;
+            const rawTxt = this.getNodeText(part.text || part);
+            if (!rawTxt) continue;
+            // Some parts contain bullet-separated items (e.g. "55K views • 7 hours ago")
+            const tokens = rawTxt
+              .split('•')
+              .map((t) => t.trim())
+              .filter(Boolean);
+            for (const txt of tokens) {
+              if (isBadgeToken(txt)) {
+                if (/member/i.test(txt)) {
+                  isMembersOnly = true;
+                  badge = txt;
+                } else if (!badge) {
+                  badge = txt;
+                }
+              } else if (isDateToken(txt)) {
+                if (!uploadedDate) uploadedDate = txt;
+              } else if (isViewToken(txt)) {
+                if (!viewCount) viewCount = txt;
+              } else if (!channelName) {
+                channelName = txt;
+              }
             }
           }
         }
+      }
+
+      // Extract channelId from metadata browseEndpoint if available
+      const scanForChannelId = (obj: any) => {
+        if (!obj || channelId || typeof obj !== 'object') return;
+        if (
+          typeof obj.browseEndpoint?.browseId === 'string' &&
+          obj.browseEndpoint.browseId.startsWith('UC')
+        ) {
+          channelId = obj.browseEndpoint.browseId;
+          return;
+        }
+        if (Array.isArray(obj)) {
+          for (const item of obj) scanForChannelId(item);
+        } else {
+          for (const v of Object.values(obj)) scanForChannelId(v);
+        }
+      };
+      scanForChannelId(metadata);
+
+      // Fallback channelName from avatar a11yLabel ("Go to channel New Rockstars")
+      if (!channelName) {
+        const scanForChannelLabel = (obj: any) => {
+          if (!obj || channelName) return;
+          if (typeof obj === 'string') {
+            const m = obj.match(/^go\s+to\s+channel\s+(.+)$/i);
+            if (m?.[1]?.trim()) {
+              channelName = m[1].trim();
+            }
+            return;
+          }
+          if (typeof obj === 'object') {
+            if (Array.isArray(obj)) {
+              for (const item of obj) scanForChannelLabel(item);
+            } else {
+              for (const v of Object.values(obj)) scanForChannelLabel(v);
+            }
+          }
+        };
+        scanForChannelLabel(metadata?.image);
+        scanForChannelLabel(metadata?.avatar);
       }
 
       if (!channelName) {
@@ -2302,14 +2649,16 @@ export class InnertubeService {
       const scanForAvatar = (obj: any) => {
         if (!obj || channelIconUrl) return;
         if (obj.sources && Array.isArray(obj.sources) && obj.sources.length > 0) {
-          const url = obj.sources.slice(-1)[0]?.url || obj.sources[0]?.url;
+          const rawUrl = obj.sources.slice(-1)[0]?.url || obj.sources[0]?.url;
+          const url = typeof rawUrl === 'string' && rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
           if (url && (url.includes('ggpht.com') || url.includes('googleusercontent') || url.includes('/ytc/'))) {
             channelIconUrl = url;
             return;
           }
         }
         if (obj.image?.sources && Array.isArray(obj.image.sources) && obj.image.sources.length > 0) {
-          const url = obj.image.sources.slice(-1)[0]?.url || obj.image.sources[0]?.url;
+          const rawUrl = obj.image.sources.slice(-1)[0]?.url || obj.image.sources[0]?.url;
+          const url = typeof rawUrl === 'string' && rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
           if (url && (url.includes('ggpht.com') || url.includes('googleusercontent') || url.includes('/ytc/'))) {
             channelIconUrl = url;
             return;
@@ -2391,13 +2740,13 @@ export class InnertubeService {
         scanForTime(lvm.accessibilityText);
       }
 
-      // Fallback: estimate from length if seconds was missing
-      if (!durationSeconds) durationSeconds = this.parseDurationString(durationFormatted) || 240;
-      if (!durationFormatted) durationFormatted = '14:53';
+      // Fallback: unknown duration stays blank rather than inventing a timestamp
+      if (!durationSeconds) durationSeconds = this.parseDurationString(durationFormatted) || 0;
 
       // Members only & Badges check
-      let isMembersOnly = false;
-      let badge = '';
+      if (/\b(members?\s*only|early\s+member\s+access|member[s-]?\s*exclusive)\b/i.test(title)) {
+        isMembersOnly = true;
+      }
       const overlays = lvm.contentImage?.thumbnailViewModel?.overlays || [];
       for (const ov of overlays) {
         const badgeRenderer = ov.thumbnailOverlayBadgeRenderer;
@@ -2417,6 +2766,28 @@ export class InnertubeService {
           if (txt.toLowerCase().includes('member')) isMembersOnly = true;
         }
       }
+      const scanForMembersBadge = (obj: any) => {
+        if (!obj || isMembersOnly) return;
+        if (typeof obj === 'string') {
+          if (
+            obj === 'BADGE_STYLE_TYPE_MEMBERS_ONLY' ||
+            obj.toLowerCase() === 'members only' ||
+            obj.toLowerCase().includes('members-only')
+          ) {
+            isMembersOnly = true;
+          }
+          return;
+        }
+        if (typeof obj === 'object') {
+          if (Array.isArray(obj)) {
+            for (const item of obj) scanForMembersBadge(item);
+          } else {
+            for (const v of Object.values(obj)) scanForMembersBadge(v);
+          }
+        }
+      };
+      scanForMembersBadge(metadata);
+      scanForMembersBadge(overlays);
 
       // Check verified creator
       let isVerified = false;
@@ -2464,11 +2835,12 @@ export class InnertubeService {
         id: videoId,
         title: title.trim(),
         channelName,
+        channelId,
         channelIconUrl: channelIconUrl || undefined,
         thumbnailUrl: bestThumb,
         duration: durationSeconds,
         durationFormatted,
-        viewCount: viewCount || 'Recommended',
+        viewCount: viewCount || '',
         uploadedDate: uploadedDate || undefined,
         badge: badge || (isMembersOnly ? 'Members only' : undefined),
         isMembersOnly,
@@ -2505,7 +2877,15 @@ export class InnertubeService {
     };
 
     scan(json);
-    return videos;
+
+    // Filter out unplayable Members-Only videos and prioritize videos with public view counts
+    const playable = videos.filter((v) => !v.isMembersOnly);
+    const listToUse = playable.length >= 4 ? playable : videos;
+    return listToUse.sort((a, b) => {
+      const aScore = (a.isMembersOnly ? 2 : 0) + (!a.viewCount ? 1 : 0);
+      const bScore = (b.isMembersOnly ? 2 : 0) + (!b.viewCount ? 1 : 0);
+      return aScore - bScore;
+    });
   }
 
   /**

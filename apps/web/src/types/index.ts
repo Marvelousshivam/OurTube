@@ -96,5 +96,10 @@ export interface TasteEntry {
   isLiked?: boolean;
 }
 
-export type { YouTubeAudioTrackOption, StreamResolutionRequest, StreamResolutionResponse } from '@koda/bridge-types';
+export type {
+  YouTubeAudioTrackOption,
+  YouTubeCaptionTrackOption,
+  StreamResolutionRequest,
+  StreamResolutionResponse
+} from '@koda/bridge-types';
 

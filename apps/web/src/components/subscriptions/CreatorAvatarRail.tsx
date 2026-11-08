@@ -325,6 +325,7 @@ export const CreatorAvatarRail: React.FC<CreatorAvatarRailProps> = ({
                     <img
                       src={channel.avatarUrl}
                       alt={channel.name}
+                      referrerPolicy="no-referrer"
                       onError={() =>
                         setAvatarErrors((prev) => ({ ...prev, [channel.id]: true }))
                       }

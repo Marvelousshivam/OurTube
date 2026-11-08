@@ -19,9 +19,14 @@ export const VideoLibraryView: React.FC<VideoLibraryViewProps> = ({ onPlayVideo,
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<VideoSortOption>('recent');
 
-  const { likedVideos: localLikedVideos, savedPlaylists: localSavedPlaylists, videoHistory: localVideoHistory } = useTasteStore();
+  const {
+    likedVideos: localLikedVideos,
+    savedPlaylists: localSavedPlaylists,
+    videoHistory: localVideoHistory,
+    watchLaterVideos: localWatchLaterVideos
+  } = useTasteStore();
   const [remoteHistoryVideos, setHistoryVideos] = useState<VideoItem[]>([]);
-  const [watchLaterVideos, setWatchLaterVideos] = useState<VideoItem[]>([]);
+  const [remoteWatchLaterVideos, setWatchLaterVideos] = useState<VideoItem[]>([]);
   const [remoteLikedVideos, setLikedVideos] = useState<VideoItem[]>([]);
   const [remotePlaylists, setPlaylists] = useState<VideoPlaylist[]>([]);
 
@@ -39,10 +44,12 @@ export const VideoLibraryView: React.FC<VideoLibraryViewProps> = ({ onPlayVideo,
           title: lv.title,
           channelName: lv.channelName,
           channelId: lv.channelId,
+          channelIconUrl: lv.channelIconUrl,
           thumbnailUrl: lv.thumbnailUrl,
           duration: durSec,
           durationFormatted: durSec > 0 ? `${mins}:${secs}` : '',
-          viewCount: lv.viewCountText || 'Watched recently'
+          viewCount: lv.viewCountText || 'Watched recently',
+          watchedPercentage: lv.watchedPercentage
         });
       }
     }
@@ -54,6 +61,37 @@ export const VideoLibraryView: React.FC<VideoLibraryViewProps> = ({ onPlayVideo,
     }
     return merged;
   }, [localVideoHistory, remoteHistoryVideos]);
+
+  const watchLaterVideos = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: VideoItem[] = [];
+    for (const wv of localWatchLaterVideos) {
+      if (!seen.has(wv.id)) {
+        seen.add(wv.id);
+        const durSec = wv.duration || 0;
+        const mins = Math.floor(durSec / 60);
+        const secs = String(Math.floor(durSec % 60)).padStart(2, '0');
+        merged.push({
+          id: wv.id,
+          title: wv.title,
+          channelName: wv.channelName,
+          channelId: wv.channelId,
+          channelIconUrl: wv.channelIconUrl,
+          thumbnailUrl: wv.thumbnailUrl,
+          duration: durSec,
+          durationFormatted: durSec > 0 ? `${mins}:${secs}` : '',
+          viewCount: wv.viewCountText || ''
+        });
+      }
+    }
+    for (const rw of remoteWatchLaterVideos) {
+      if (!seen.has(rw.id)) {
+        seen.add(rw.id);
+        merged.push(rw);
+      }
+    }
+    return merged;
+  }, [localWatchLaterVideos, remoteWatchLaterVideos]);
 
   const likedVideos = useMemo(() => {
     const seen = new Set<string>();

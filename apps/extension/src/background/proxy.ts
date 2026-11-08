@@ -4,7 +4,8 @@ import {
   StreamResolutionRequest,
   StreamResolutionResponse,
   YouTubeAudioTrackOption,
-  parseAudioTracksFromAdaptiveFormats
+  parseAudioTracksFromAdaptiveFormats,
+  parseCaptionTracksFromPlayerResponse
 } from '@koda/bridge-types';
 import { getAuthState, getActiveIdentity, getSigningSecret, calculateSapisidHash, MUSIC_ORIGIN } from './auth';
 import { installExtensionFetchRule } from './rules';
@@ -203,39 +204,54 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
       formats.find((f) => f.url);
 
     let bestVideo: any = null;
+    let usingMuxedVideo = false;
     if (payload.mode === 'video') {
-      // If there are multiple audio tracks (e.g. dubs exist), DO NOT use muxed formats,
-      // because muxed formats contain YouTube's forced regional dub!
-      const hasDubsOrChoice = audioTracks.length > 1 || (selectedTrack && !selectedTrack.isOriginal);
-
       const muxedFormats = formats
         .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url)
         .sort((a, b) => (b.height || 0) - (a.height || 0));
 
       const videoFormats = adaptiveFormats
         .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url)
-        .sort((a, b) => (b.height || 0) - (a.height || 0));
+        .sort((a, b) => {
+          const heightDiff = (b.height || 0) - (a.height || 0);
+          if (heightDiff !== 0) return heightDiff;
+          // Prefer avc1 (H.264) for hardware decode efficiency & zero-stutter compatibility
+          const aAvc = a.mimeType?.includes('avc1') ? 1 : 0;
+          const bAvc = b.mimeType?.includes('avc1') ? 1 : 0;
+          return bAvc - aAvc;
+        });
 
-      if (!hasDubsOrChoice && muxedFormats.length > 0 && (!payload.quality || payload.quality === 'auto' || payload.quality === '720p' || payload.quality === '360p')) {
+      const targetHeight =
+        payload.quality && payload.quality !== 'auto'
+          ? parseInt(payload.quality.replace('p', ''), 10)
+          : 1080;
+
+      // Prefer adaptive HD video + separate adaptive audio track so we get 1080p/720p + original soundtrack
+      bestVideo =
+        videoFormats.find((f) => f.height === targetHeight && f.mimeType?.includes('avc1')) ||
+        videoFormats.find((f) => f.height === targetHeight) ||
+        videoFormats.find((f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720) ||
+        videoFormats[0];
+
+      // Only fall back to muxed format if adaptive video formats are unavailable
+      if (!bestVideo && muxedFormats.length > 0) {
         bestVideo = muxedFormats[0];
-        if (!bestAudio?.url) bestAudio = bestVideo;
-      } else {
-        if (payload.quality && payload.quality !== 'auto') {
-          const targetHeight = parseInt(payload.quality.replace('p', ''), 10);
-          bestVideo = videoFormats.find((f) => f.height === targetHeight) || videoFormats[0];
-        } else {
-          bestVideo = videoFormats[0];
-        }
+        usingMuxedVideo = true;
       }
     }
+
+    const captionTracks = parseCaptionTracksFromPlayerResponse(res.data);
 
     const hasRequiredStreams = payload.mode === 'video'
       ? Boolean(bestVideo?.url)
       : Boolean(bestAudio?.url);
 
     if (hasRequiredStreams && (bestAudio?.url || bestVideo?.url)) {
+      const resolvedAudioUrl = usingMuxedVideo
+        ? bestVideo?.url
+        : selectedTrack?.url || bestAudio?.url || bestVideo?.url;
       return {
-        audioUrl: selectedTrack?.url || bestAudio?.url || bestVideo?.url,
+        audioUrl: resolvedAudioUrl,
         videoUrl: bestVideo?.url,
         audioBitrate: selectedTrack?.bitrate || bestAudio?.bitrate,
         videoQuality: bestVideo ? `${bestVideo.height}p` : undefined,
@@ -244,7 +260,8 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
           : 21600,
         format: bestVideo?.mimeType || bestAudio?.mimeType,
         audioTracks,
-        selectedAudioTrackId: selectedTrack?.id
+        selectedAudioTrackId: selectedTrack?.id,
+        captionTracks
       };
     }
   } catch (err) {
