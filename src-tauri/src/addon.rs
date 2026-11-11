@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +41,8 @@ fn do_addon_fetch(payload: AddonFetchPayload) -> Result<AddonFetchResponse, Stri
     let mut req = client
         .get(parsed.as_str())
         .header("Accept", "application/json")
-        .header("User-Agent", "BitChord-Addon/1.0 OurTube-Desktop/1.0");
+        .header("User-Agent", "BitChord-Addon/1.0 OurTube-Desktop/1.0")
+        .timeout(Duration::from_secs(8));
 
     if let Some(tracker) = payload.zombie_tracker.as_deref().filter(|s| !s.is_empty()) {
         req = req

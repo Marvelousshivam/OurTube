@@ -60,11 +60,35 @@ export const AudioMediaElement: React.FC = () => {
       const state = event.payload;
       if (!state) return;
 
-      if (state.deviceName && activeStreamSpec && activeStreamSpec.dacDeviceName !== state.deviceName) {
-        setActiveStreamSpec({
-          ...activeStreamSpec,
-          dacDeviceName: state.deviceName
-        });
+      if (activeStreamSpec && (state.deviceName || state.sampleRate || state.bitDepth)) {
+        const sr = state.sampleRate || activeStreamSpec.sampleRate || 44100;
+        const bd = state.bitDepth || activeStreamSpec.bitDepth || 16;
+        const rateKhz = (sr / 1000).toFixed(sr % 1000 === 0 ? 0 : 1);
+        const isHiRes = bd >= 24 || sr >= 88200;
+        const isDacBitPerfect = dacBitPerfectExclusive && (state.mode ? state.mode.includes('Exclusive') : true);
+        const badgeText = isDacBitPerfect
+          ? `${bd}-BIT / ${rateKhz}KHZ FLAC • BIT-PERFECT`
+          : `${bd}-BIT / ${rateKhz}KHZ FLAC • ${isHiRes ? 'HI-RES' : 'LOSSLESS'}`;
+        const shortBadgeText = isDacBitPerfect
+          ? `${bd}-BIT FLAC • BIT-PERFECT`
+          : `${bd}-BIT FLAC`;
+
+        if (
+          activeStreamSpec.sampleRate !== sr ||
+          activeStreamSpec.bitDepth !== bd ||
+          activeStreamSpec.dacDeviceName !== state.deviceName ||
+          activeStreamSpec.outputMode !== state.mode
+        ) {
+          setActiveStreamSpec({
+            ...activeStreamSpec,
+            sampleRate: sr,
+            bitDepth: bd,
+            dacDeviceName: state.deviceName || activeStreamSpec.dacDeviceName,
+            outputMode: state.mode || activeStreamSpec.outputMode,
+            badgeText,
+            shortBadgeText
+          });
+        }
       }
 
       if (state.error) {

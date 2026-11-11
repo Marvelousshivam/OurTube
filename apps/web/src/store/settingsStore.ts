@@ -3,7 +3,7 @@ import { PlayerStyle } from '../types';
 import { PaletteStyle, AppPalette, APP_PALETTES, applyPaletteTheme } from '../theme/ColorPalettes';
 import { usePlayerStore } from './playerStore';
 import { useTasteStore } from './tasteStore';
-import type { LosslessAddonConfig } from '../api/losslessAddon';
+import { clearLosslessCache, type LosslessAddonConfig } from '../api/losslessAddon';
 
 export type ThemeMode = 'system' | 'light' | 'dark' | 'amoled';
 export type AudioStreamQuality = 'high' | 'normal' | 'saver';
@@ -329,11 +329,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   setLosslessEnabled: (enabled: boolean) => {
+    clearLosslessCache();
     setStored('ourtube_lossless_enabled', enabled);
     set({ losslessEnabled: enabled });
   },
 
   addLosslessAddon: (addon: LosslessAddonConfig) => {
+    clearLosslessCache();
     const list = get().losslessAddons.filter((a) => a.id !== addon.id);
     const updated = [...list, addon];
     setStored('ourtube_lossless_addons', updated);
@@ -341,12 +343,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   removeLosslessAddon: (id: string) => {
+    clearLosslessCache();
     const updated = get().losslessAddons.filter((a) => a.id !== id);
     setStored('ourtube_lossless_addons', updated);
     set({ losslessAddons: updated });
   },
 
   toggleLosslessAddon: (id: string) => {
+    clearLosslessCache();
     const updated = get().losslessAddons.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
     setStored('ourtube_lossless_addons', updated);
     set({ losslessAddons: updated });

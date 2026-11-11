@@ -280,7 +280,13 @@ fn run_dac_playback(
 
     // 1. Fetch audio stream into memory
     let client = crate::proxy::http_client();
-    let resp = match client.get(&url).send() {
+    let resp = match client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+        .header("Accept", "*/*")
+        .timeout(Duration::from_secs(30))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => {
             state.error = Some(format!("Fetch error: {e}"));

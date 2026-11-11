@@ -61,8 +61,12 @@ export interface ResolvedLosslessStream {
 
 const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
 
-// In-memory cache for resolved track IDs
-const losslessCache = new Map<string, ResolvedLosslessStream | null>();
+// In-memory cache for resolved track IDs (stores only positive matches)
+const losslessCache = new Map<string, ResolvedLosslessStream>();
+
+export function clearLosslessCache(): void {
+  losslessCache.clear();
+}
 
 /**
  * Normalizes user-input URL to manifest URL and base endpoint URL.
@@ -197,8 +201,13 @@ function normalizeStr(s: string): string {
     .trim();
 }
 
+function isPlaceholderDuration(d?: number): boolean {
+  return !d || d <= 0 || d === 210 || d === 180 || d === 240;
+}
+
 /**
  * Searches and resolves a lossless stream for a track across enabled addons.
+ * Queries all enabled addons concurrently so slow/offline addons never block fast ones.
  */
 export async function resolveLosslessForTrack(
   track: TrackMetadata,
@@ -214,61 +223,106 @@ export async function resolveLosslessForTrack(
 
   const cleanTitle = cleanTrackTitle(track.title);
   const primaryArtist = (track.artist || '').split(/[,&]/)[0].trim();
-  const searchQuery = `${cleanTitle} ${primaryArtist}`.trim();
+  const normCleanTitle = normalizeStr(cleanTitle);
+  const normArtist = normalizeStr(primaryArtist);
+  const targetDuration = track.duration || 0;
+  const isTargetPlaceholder = isPlaceholderDuration(targetDuration);
 
-  for (const addon of enabledAddons) {
+  // Query each enabled addon concurrently
+  const addonPromises = enabledAddons.map(async (addon): Promise<ResolvedLosslessStream | null> => {
     try {
-      const searchUrl = `${addon.baseUrl}/search?q=${encodeURIComponent(searchQuery)}&quality=LOSSLESS&atmos=auto`;
-      const res = await fetchAddonJson<{ tracks?: LosslessTrackCandidate[] }>(searchUrl, trackerToken);
-      if (!res.ok || !res.data || !Array.isArray(res.data.tracks)) {
-        continue;
+      // 1. Search with cleanTitle + primaryArtist
+      const queryWithArtist = `${cleanTitle} ${primaryArtist}`.trim();
+      let searchUrl = `${addon.baseUrl}/search?q=${encodeURIComponent(queryWithArtist)}&quality=hi_res_lossless&atmos=auto`;
+      let res = await fetchAddonJson<{ tracks?: LosslessTrackCandidate[] }>(searchUrl, trackerToken);
+
+      // If no tracks returned, fall back to searching cleanTitle alone
+      if (!res.ok || !res.data || !Array.isArray(res.data.tracks) || res.data.tracks.length === 0) {
+        const queryTitleOnly = cleanTitle;
+        if (queryTitleOnly !== queryWithArtist) {
+          searchUrl = `${addon.baseUrl}/search?q=${encodeURIComponent(queryTitleOnly)}&quality=hi_res_lossless&atmos=auto`;
+          res = await fetchAddonJson<{ tracks?: LosslessTrackCandidate[] }>(searchUrl, trackerToken);
+        }
+      }
+
+      if (!res.ok || !res.data || !Array.isArray(res.data.tracks) || res.data.tracks.length === 0) {
+        return null;
       }
 
       const candidates = res.data.tracks;
-      const targetDuration = track.duration || 0;
-      const normCleanTitle = normalizeStr(cleanTitle);
-      const normArtist = normalizeStr(primaryArtist);
 
-      // Find the best match
-      const matched = candidates.find((c) => {
-        if (!c.id || !c.title) return false;
+      // Score candidates to find the highest-fidelity match
+      let bestMatch: LosslessTrackCandidate | null = null;
+      let bestScore = -1;
 
-        // Duration check: if both have duration, ensure delta <= 8s
-        if (targetDuration > 0 && c.duration && c.duration > 0) {
-          const delta = Math.abs(c.duration - targetDuration);
-          if (delta > 8) return false;
-        }
+      for (const c of candidates) {
+        if (!c.id || !c.title) continue;
 
         const candTitleNorm = normalizeStr(c.title);
         const candArtistNorm = normalizeStr(c.artist || '');
 
-        const titleMatch =
-          candTitleNorm === normCleanTitle ||
-          candTitleNorm.includes(normCleanTitle) ||
-          normCleanTitle.includes(candTitleNorm);
+        const titleExact = candTitleNorm === normCleanTitle;
+        const titleContains =
+          candTitleNorm.includes(normCleanTitle) || normCleanTitle.includes(candTitleNorm);
 
-        const artistMatch =
+        if (!titleExact && !titleContains) continue;
+
+        const artistExact = !normArtist || candArtistNorm === normArtist;
+        const artistContains =
           !normArtist ||
           candArtistNorm.includes(normArtist) ||
           normArtist.includes(candArtistNorm);
 
-        return titleMatch && artistMatch;
-      });
+        // Score based on title & artist accuracy
+        let score = 0;
+        if (titleExact) score += 60;
+        else score += 30;
 
-      if (!matched) {
-        continue;
+        if (artistExact) score += 40;
+        else if (artistContains) score += 25;
+        else if (titleExact) score += 10; // title was exact, artist might be credited under label
+
+        // Duration matching: ignore if target or candidate has a placeholder duration (210, 180, 240, 0)
+        const hasRealTarget = !isTargetPlaceholder;
+        const hasRealCand = !isPlaceholderDuration(c.duration);
+
+        if (hasRealTarget && hasRealCand && c.duration) {
+          const delta = Math.abs(c.duration - targetDuration);
+          if (delta <= 4) score += 30;
+          else if (delta <= 12) score += 20;
+          else if (delta <= 25) score += 10;
+          else if (delta > 45 && !titleExact) {
+            // Far off duration and not exact title: likely an extended remix or different song
+            continue;
+          }
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = c;
+        }
       }
 
-      // Resolve stream
-      const streamUrl = `${addon.baseUrl}/stream/${encodeURIComponent(matched.id)}?quality=LOSSLESS&atmos=auto`;
-      const streamRes = await fetchAddonJson<any>(streamUrl, trackerToken);
+      if (!bestMatch) {
+        return null;
+      }
+
+      // Resolve stream URL: try hi_res_lossless first, then lossless
+      let streamUrl = `${addon.baseUrl}/stream/${encodeURIComponent(bestMatch.id)}?quality=hi_res_lossless&atmos=auto`;
+      let streamRes = await fetchAddonJson<any>(streamUrl, trackerToken);
+
       if (!streamRes.ok || !streamRes.data?.url) {
-        continue;
+        streamUrl = `${addon.baseUrl}/stream/${encodeURIComponent(bestMatch.id)}?quality=lossless&atmos=auto`;
+        streamRes = await fetchAddonJson<any>(streamUrl, trackerToken);
+      }
+
+      if (!streamRes.ok || !streamRes.data?.url) {
+        return null;
       }
 
       const streamData = streamRes.data;
       const sampleRate = Number(streamData.sampleRate) || 44100;
-      const bitDepth = Number(streamData.bitDepth) || 16;
+      const bitDepth = Number(streamData.bitDepth) || (streamData.quality?.toLowerCase().includes('hi-res') ? 24 : 16);
       const bitrateKbps = Number(streamData.bitrate) || Math.round((sampleRate * bitDepth * 2) / 1000);
       const codec = (streamData.codec || streamData.format || 'flac').toUpperCase();
 
@@ -288,22 +342,30 @@ export async function resolveLosslessForTrack(
         badgeText,
         shortBadgeText,
         addonName: addon.name,
-        candidateTitle: matched.title,
-        candidateArtist: matched.artist
+        candidateTitle: bestMatch.title,
+        candidateArtist: bestMatch.artist
       };
 
-      // Register URL with stream server allowlist if running on desktop
+      // Register URL with local stream server allowlist on desktop
       if (isTauri) {
         invoke('allow_stream_url', { url: resolved.url }).catch(() => {});
       }
 
-      losslessCache.set(track.id, resolved);
       return resolved;
     } catch (err) {
       console.warn(`[OurTube Lossless] Error querying addon ${addon.name}:`, err);
+      return null;
+    }
+  });
+
+  // Evaluate all addons and pick the first resolved stream
+  const settled = await Promise.allSettled(addonPromises);
+  for (const item of settled) {
+    if (item.status === 'fulfilled' && item.value?.url) {
+      losslessCache.set(track.id, item.value);
+      return item.value;
     }
   }
 
-  losslessCache.set(track.id, null);
   return null;
 }
