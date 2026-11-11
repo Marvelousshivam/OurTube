@@ -7,6 +7,8 @@ import {
   YouTubeAudioTrackOption
 } from '@koda/bridge-types';
 import { useSettingsStore } from '../store/settingsStore';
+import { invoke } from '@tauri-apps/api/core';
+import { isDesktopApp } from './desktop';
 
 let chunkedSwReady = false;
 
@@ -71,6 +73,8 @@ export function wrapChunkedStreamUrl(rawUrl?: string | null): string | null {
   if (!rawUrl) return null;
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return rawUrl;
   if (!chunkedSwReady && !navigator.serviceWorker.controller) return rawUrl;
+  // Desktop: media is served by the Rust stream server, not the service worker
+  if (isDesktopApp()) return rawUrl;
   try {
     const parsed = new URL(rawUrl);
     if (!parsed.hostname.endsWith('.googlevideo.com')) return rawUrl;
@@ -91,6 +95,8 @@ const prewarmedUrls = new Set<string>();
  */
 export function prewarmStreamBytes(rawUrl?: string | null): void {
   if (!rawUrl || typeof window === 'undefined') return;
+  // Desktop: no service worker cache, and direct googlevideo fetches are CORS-blocked
+  if (isDesktopApp()) return;
   if (prewarmedUrls.has(rawUrl)) return;
   prewarmedUrls.add(rawUrl);
   if (prewarmedUrls.size > 40) {
@@ -251,6 +257,52 @@ async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit):
   });
 }
 
+/**
+ * Desktop (Tauri) fetch for youtubei.js: routes the request through the Rust
+ * proxy_fetch command, which may set Origin/Referer/X-Origin and is not
+ * subject to CORS. Rebuilds a standard Response for youtubei.js.
+ */
+async function desktopProxyFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const request = input instanceof Request ? input : null;
+  const url = new URL(request ? request.url : input.toString());
+
+  if (!YOUTUBE_HOSTS.has(url.hostname)) {
+    return fetch(input, init);
+  }
+
+  const method = (init?.method ?? request?.method ?? 'GET').toUpperCase();
+  const headers: Record<string, string> = {};
+  new Headers(init?.headers ?? request?.headers).forEach((value, key) => {
+    headers[key] = value;
+  });
+
+  let body: string | undefined;
+  if (init?.body != null) {
+    body = typeof init.body === 'string' ? init.body : await new Response(init.body).text();
+  } else if (request && method !== 'GET' && method !== 'HEAD') {
+    body = await request.text();
+  }
+
+  const res = await invoke<{
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    data: unknown;
+  }>('proxy_fetch', { payload: { url: url.toString(), method, headers, body } });
+
+  const text = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? null);
+  const responseHeaders = new Headers(res.headers || {});
+  // The body is already decoded; stale framing headers would corrupt the Response.
+  responseHeaders.delete('content-length');
+  responseHeaders.delete('content-encoding');
+  const nullBody = res.status === 204 || res.status === 304;
+  return new Response(nullBody ? null : text, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: responseHeaders
+  });
+}
+
 let webInnertubeInstance: Innertube | null = null;
 let initPromise: Promise<Innertube> | null = null;
 
@@ -270,7 +322,8 @@ export async function getWebInnertube(): Promise<Innertube> {
 
       const instance = await Innertube.create({
         cache: new UniversalCache(true),
-        fetch: simpleRequestFetch,
+        // Desktop: route through the Rust proxy (no CORS wall in the Tauri shell)
+        fetch: isDesktopApp() ? desktopProxyFetch : simpleRequestFetch,
         retrieve_player: true
       });
       webInnertubeInstance = instance;
@@ -409,6 +462,34 @@ export function prefetchVideoStream(
   prefetchStream({ videoId, mode: 'video', quality }).catch(() => {});
 }
 
+let desktopStreamPort: number | null = null;
+async function getDesktopStreamPort(): Promise<number> {
+  if (desktopStreamPort === null) {
+    desktopStreamPort = await invoke<number>('stream_port');
+  }
+  return desktopStreamPort;
+}
+
+async function wrapDesktopMediaUrl(rawUrl?: string | null): Promise<string | undefined> {
+  if (!rawUrl) return undefined;
+  try {
+    const host = new URL(rawUrl).hostname;
+    if (host !== 'googlevideo.com' && !host.endsWith('.googlevideo.com')) return rawUrl;
+  } catch {
+    return rawUrl;
+  }
+  const port = await getDesktopStreamPort();
+  return `http://127.0.0.1:${port}/stream?url=${encodeURIComponent(rawUrl)}`;
+}
+
+async function wrapDesktopStreamUrls(res: StreamResolutionResponse): Promise<StreamResolutionResponse> {
+  return {
+    ...res,
+    audioUrl: await wrapDesktopMediaUrl(res.audioUrl),
+    videoUrl: await wrapDesktopMediaUrl(res.videoUrl)
+  };
+}
+
 /**
  * Resolves a high-quality direct audio/video stream URL.
  * Architecture:
@@ -438,10 +519,14 @@ export async function resolveStream(options: StreamOptions): Promise<StreamResol
   const resolutionPromise = (async () => {
     try {
       const res = await _doResolveStream(options);
-      if (res?.audioUrl) {
-        setCachedStream(options, res);
+      // Desktop: serve googlevideo media through the Rust stream server
+      // (sends no Origin/Referer, so streams don't 403, and seeking works
+      // via forwarded Range requests)
+      const finalRes = res && isDesktopApp() ? await wrapDesktopStreamUrls(res) : res;
+      if (finalRes?.audioUrl) {
+        setCachedStream(options, finalRes);
       }
-      return res;
+      return finalRes;
     } finally {
       inFlightStreamResolutions.delete(cacheKey);
     }

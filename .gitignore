@@ -71,3 +71,7 @@ coverage/
 ehthumbs.db
 Thumbs.db
 [Dd]esktop.ini
+
+# Tauri
+/src-tauri/target/
+/src-tauri/gen/

@@ -11,6 +11,11 @@
     "package:extension": "node scripts/package-extension.mjs",
     "build:extension": "npm run build --workspace=apps/extension && node scripts/package-extension.mjs",
     "build:web": "npm run build --workspace=apps/web",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
     "build": "npm run build --workspace=apps/extension && node scripts/package-extension.mjs && npm run build --workspace=apps/web"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
   }
 }

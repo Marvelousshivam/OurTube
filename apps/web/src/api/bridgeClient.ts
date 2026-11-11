@@ -12,6 +12,8 @@ import {
   YtAccount,
   YtChannel
 } from '@koda/bridge-types';
+import { isDesktopApp } from './desktop';
+import { handleDesktopRequest } from './desktopBridge';
 
 export type ExtensionConnectionState = 'checking' | 'missing' | 'connected';
 
@@ -106,6 +108,7 @@ class BridgeClient {
   private accountListeners: Set<(auth: AuthState) => void> = new Set();
   private pollTimer: number | null = null;
   private checkGraceTimer: number | null = null;
+  private isDesktop: boolean = isDesktopApp();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -118,8 +121,13 @@ class BridgeClient {
         }
       });
 
-      // Initial ping
-      this.pingBridge();
+      // Inside the Tauri desktop shell the bridge is native and always ready
+      if (this.isDesktop) {
+        this.markConnected();
+      } else {
+        // Initial ping
+        this.pingBridge();
+      }
 
       // Grace period before flipping from 'checking' to 'missing'
       this.checkGraceTimer = window.setTimeout(() => {
@@ -322,6 +330,10 @@ class BridgeClient {
   }
 
   public async sendRequest<T = any>(type: BridgeMessageType, payload?: any, timeoutMs: number = 10000): Promise<T> {
+    // Desktop (Tauri): bridge messages are answered natively, not by the extension
+    if (this.isDesktop) {
+      return handleDesktopRequest<T>(type as string, payload);
+    }
     return new Promise((resolve, reject) => {
       const id = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
