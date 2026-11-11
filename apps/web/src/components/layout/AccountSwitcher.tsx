@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { bridgeClient } from '../../api/bridgeClient';
+import { isDesktopApp } from '../../api/desktop';
+import { openDesktopLogin, signOutDesktop } from '../../api/desktopAuth';
 import { AuthState, YtChannel } from '../../types';
 
 interface AccountSwitcherProps {
@@ -21,13 +23,18 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
   };
 
   useEffect(() => {
-    const unsub = bridgeClient.onAvailabilityChange((available) => {
+    const unsubAvail = bridgeClient.onAvailabilityChange((available) => {
       if (available) {
         bridgeClient.refreshAuth().then(setAuthState);
       }
     });
+    const unsubAcct = bridgeClient.onAccountChange((auth) => {
+      setAuthState(auth);
+      onAccountChanged?.();
+    });
     return () => {
-      unsub();
+      unsubAvail();
+      unsubAcct();
     };
   }, []);
 
@@ -226,10 +233,46 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
                   color: 'var(--md-sys-color-on-surface-variant)',
                   fontSize: '12px',
                   lineHeight: 1.5,
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  alignItems: 'center'
                 }}
               >
-                No signed-in YouTube account detected yet. Sign in to YouTube Music in your browser and click <strong>Sync Google Accounts</strong> below.
+                {isDesktopApp() ? (
+                  <>
+                    <span>
+                      Sign in with your Google account to sync your YouTube Music playlists, Liked songs, history, and recommendations.
+                    </span>
+                    <button
+                      onClick={() => {
+                        openDesktopLogin(false);
+                        setIsOpen(false);
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 16px',
+                        borderRadius: '9999px',
+                        backgroundColor: 'var(--md-sys-color-primary)',
+                        color: 'var(--md-sys-color-on-primary)',
+                        border: 'none',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>login</span>
+                      Sign in with Google
+                    </button>
+                  </>
+                ) : (
+                  <span>
+                    No signed-in YouTube account detected yet. Sign in to YouTube Music in your browser and click <strong>Sync Google Accounts</strong> below.
+                  </span>
+                )}
               </div>
             ) : (
               accounts.map((account, aIdx) => (
@@ -309,7 +352,12 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
           <div style={{ borderTop: '1px solid var(--md-sys-color-outline-variant)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <button
               onClick={() => {
-                window.open('https://accounts.google.com/AddSession?service=youtube&continue=https://music.youtube.com/', '_blank');
+                if (isDesktopApp()) {
+                  openDesktopLogin(isSignedIn);
+                  setIsOpen(false);
+                } else {
+                  window.open('https://accounts.google.com/AddSession?service=youtube&continue=https://music.youtube.com/', '_blank');
+                }
               }}
               style={{
                 display: 'flex',
@@ -325,13 +373,15 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
                 cursor: 'pointer'
               }}
             >
-              <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>add</span>
-              Add Another Google Account
+              <span className="material-symbols-rounded" style={{ fontSize: '18px' }}>
+                {isDesktopApp() && !isSignedIn ? 'login' : 'add'}
+              </span>
+              {isDesktopApp() && !isSignedIn ? 'Sign in with Google' : 'Add Another Google Account'}
             </button>
             <button
               onClick={async () => {
                 setSwitching(true);
-                const fresh = await bridgeClient.refreshAuth();
+                const fresh = await bridgeClient.refreshAuth(true);
                 setAuthState(fresh);
                 setSwitching(false);
               }}
@@ -352,6 +402,35 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onAccountChang
               <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>refresh</span>
               Sync Google Accounts
             </button>
+            {isDesktopApp() && isSignedIn && (
+              <button
+                onClick={async () => {
+                  setSwitching(true);
+                  await signOutDesktop();
+                  const fresh = await bridgeClient.refreshAuth(true);
+                  setAuthState(fresh);
+                  setSwitching(false);
+                  setIsOpen(false);
+                  onAccountChanged?.();
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 10px',
+                  borderRadius: '12px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: 'var(--md-sys-color-error)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <span className="material-symbols-rounded" style={{ fontSize: '16px' }}>logout</span>
+                Sign out
+              </button>
+            )}
           </div>
         </div>
       )}

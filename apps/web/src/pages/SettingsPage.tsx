@@ -18,6 +18,8 @@ import { PlayerStyleGallery } from '../components/settings/PlayerStyleGallery';
 import { PaletteStudio } from '../components/theme/PaletteStudio';
 import { KeyboardShortcutsModal } from '../components/settings/KeyboardShortcutsModal';
 import { OurTubeLogo } from '../components/common/OurTubeLogo';
+import { isDesktopApp } from '../api/desktop';
+import { openDesktopLogin, signOutDesktop } from '../api/desktopAuth';
 import { APP_PALETTES, PaletteStyle } from '../theme/ColorPalettes';
 import { bridgeClient } from '../api/bridgeClient';
 import { discordPresenceManager } from '../api/discordPresence';
@@ -116,13 +118,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
     refreshStorage();
     bridgeClient.refreshAuth().then(setAuthState);
     discordPresenceManager.refreshState();
-    const unsub = bridgeClient.onAvailabilityChange((available) => {
+    const unsubAvail = bridgeClient.onAvailabilityChange((available) => {
       if (available) {
         bridgeClient.refreshAuth().then(setAuthState);
         discordPresenceManager.refreshState();
       }
     });
-    return () => unsub();
+    const unsubAcct = bridgeClient.onAccountChange(setAuthState);
+    return () => {
+      unsubAvail();
+      unsubAcct();
+    };
   }, []);
 
   const handleDiscordConnectToggle = async () => {
@@ -488,9 +494,53 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                       {authState.selectedChannel?.handle || 'YouTube Music account'}
                     </span>
                     <span style={{ fontSize: '12px', color: 'var(--md-sys-color-primary)', fontWeight: 600 }}>
-                      {authState.isAuthenticated ? 'Connected via OurTube Extension Bridge' : 'Not signed in'}
+                      {authState.isAuthenticated
+                        ? isDesktopApp()
+                          ? 'Connected via OurTube Desktop'
+                          : 'Connected via OurTube Extension Bridge'
+                        : 'Not signed in'}
                     </span>
                   </div>
+                  {isDesktopApp() && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => openDesktopLogin(authState.isAuthenticated)}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '9999px',
+                          border: 'none',
+                          backgroundColor: 'var(--md-sys-color-primary)',
+                          color: 'var(--md-sys-color-on-primary)',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {authState.isAuthenticated ? 'Add Account' : 'Sign in with Google'}
+                      </button>
+                      {authState.isAuthenticated && (
+                        <button
+                          onClick={async () => {
+                            await signOutDesktop();
+                            const fresh = await bridgeClient.refreshAuth(true);
+                            setAuthState(fresh);
+                          }}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '9999px',
+                            border: '1px solid var(--md-sys-color-outline-variant)',
+                            backgroundColor: 'transparent',
+                            color: 'var(--md-sys-color-on-surface)',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Sign out
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <SettingsDivider />
@@ -598,7 +648,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                   ))
                 ) : (
                   <div style={{ padding: '24px', textAlign: 'center', color: 'var(--md-sys-color-outline)' }}>
-                    No Google accounts detected. Please ensure the extension is enabled.
+                    {isDesktopApp()
+                      ? 'No Google accounts connected yet. Click "Sign in with Google" above to link your YouTube Music account.'
+                      : 'No Google accounts detected. Please ensure the extension is enabled.'}
                   </div>
                 )}
               </SettingsCard>

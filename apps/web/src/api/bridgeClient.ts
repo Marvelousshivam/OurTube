@@ -13,7 +13,7 @@ import {
   YtChannel
 } from '@koda/bridge-types';
 import { isDesktopApp } from './desktop';
-import { handleDesktopRequest } from './desktopBridge';
+import { handleDesktopRequest, registerDesktopAuthListener } from './desktopBridge';
 
 export type ExtensionConnectionState = 'checking' | 'missing' | 'connected';
 
@@ -123,6 +123,9 @@ class BridgeClient {
 
       // Inside the Tauri desktop shell the bridge is native and always ready
       if (this.isDesktop) {
+        registerDesktopAuthListener(() => {
+          this.refreshAuth(true);
+        });
         this.markConnected();
       } else {
         // Initial ping
@@ -268,17 +271,21 @@ class BridgeClient {
     return false;
   }
 
-  public async refreshAuth(): Promise<AuthState> {
+  public async refreshAuth(forceRefresh: boolean = false): Promise<AuthState> {
     if (!this.isAvailable) {
       return this.authState;
     }
     try {
       const prevChannelId = this.authState.selectedChannelId;
-      const auth = await this.sendRequest<AuthState>('KODA_BRIDGE_GET_AUTH');
+      const prevAuthenticated = this.authState.isAuthenticated;
+      const auth = await this.sendRequest<AuthState>('KODA_BRIDGE_GET_AUTH', { forceRefresh });
       if (auth && Array.isArray(auth.accounts)) {
         this.authState = sanitizeAuthState(auth);
         saveCachedAuth(this.authState);
-        if (this.authState.selectedChannelId !== prevChannelId) {
+        if (
+          this.authState.selectedChannelId !== prevChannelId ||
+          this.authState.isAuthenticated !== prevAuthenticated
+        ) {
           this.notifyAccountChange();
         }
       }

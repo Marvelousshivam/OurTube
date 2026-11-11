@@ -14,6 +14,7 @@ import { SettingsPage } from '../../pages/SettingsPage';
 import { bridgeClient, ExtensionConnectionState } from '../../api/bridgeClient';
 import { ExtensionRequiredGate } from '../extension/ExtensionRequiredGate';
 import { discordPresenceManager } from '../../api/discordPresence';
+import { playbackReportingManager } from '../../api/playbackReporting';
 import { useTasteStore } from '../../store/tasteStore';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { M3LoadingIndicator } from '../common/M3LoadingIndicator';
@@ -174,6 +175,7 @@ export const AppLayout: React.FC = () => {
       if (state === 'connected') {
         loadInitialData();
         discordPresenceManager.init();
+        playbackReportingManager.init();
       }
     });
 
@@ -183,6 +185,7 @@ export const AppLayout: React.FC = () => {
         setBridgeState('connected');
         loadInitialData();
         discordPresenceManager.init();
+        playbackReportingManager.init();
       }
     });
 
@@ -191,6 +194,7 @@ export const AppLayout: React.FC = () => {
       setIsBridgeConnected(true);
       loadInitialData();
       discordPresenceManager.init();
+      playbackReportingManager.init();
     }
 
     const handleUrlRouteSync = () => {

@@ -1,4 +1,5 @@
 import { bridgeClient } from '../api/bridgeClient';
+import { isDesktopApp } from '../api/desktop';
 
 export const LYRIC_EXTENSION_ORIGINS = [
   'https://mobileservice.kugou.com',
@@ -42,6 +43,9 @@ async function viaExtensionOrProxy(
             Uint8Array.from(atob(response.body), (c) => c.charCodeAt(0))
           )
         : response.body;
+    }
+    if (isDesktopApp()) {
+      return null;
     }
   }
 

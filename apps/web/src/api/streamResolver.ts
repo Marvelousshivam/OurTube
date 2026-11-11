@@ -283,12 +283,27 @@ async function desktopProxyFetch(input: RequestInfo | URL, init?: RequestInit): 
     body = await request.text();
   }
 
+  // Signed-in /player fallback only when anonymous resolution failed (e.g. age-restricted video)
+  if (url.pathname === '/youtubei/v1/player' && typeof body === 'string') {
+    const authenticated = await tryAuthenticatedPlayerFetch(url, body);
+    if (authenticated) return authenticated;
+  }
+
   const res = await invoke<{
     status: number;
     statusText: string;
     headers: Record<string, string>;
     data: unknown;
-  }>('proxy_fetch', { payload: { url: url.toString(), method, headers, body } });
+  }>('proxy_fetch', {
+    payload: {
+      url: url.toString(),
+      method,
+      headers,
+      body,
+      signed: false,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined
+    }
+  });
 
   const text = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? null);
   const responseHeaders = new Headers(res.headers || {});
@@ -483,10 +498,19 @@ async function wrapDesktopMediaUrl(rawUrl?: string | null): Promise<string | und
 }
 
 async function wrapDesktopStreamUrls(res: StreamResolutionResponse): Promise<StreamResolutionResponse> {
+  const audioTracks = res.audioTracks
+    ? await Promise.all(
+        res.audioTracks.map(async (t) => ({
+          ...t,
+          url: (await wrapDesktopMediaUrl(t.url)) ?? t.url
+        }))
+      )
+    : undefined;
   return {
     ...res,
     audioUrl: await wrapDesktopMediaUrl(res.audioUrl),
-    videoUrl: await wrapDesktopMediaUrl(res.videoUrl)
+    videoUrl: await wrapDesktopMediaUrl(res.videoUrl),
+    audioTracks
   };
 }
 

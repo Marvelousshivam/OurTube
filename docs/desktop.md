@@ -15,8 +15,9 @@ absorbed by the app:
 | Proxy InnerTube calls with rewritten Origin/Referer (DNR rules) | Rust `proxy_fetch` command (`src-tauri/src/proxy.rs`) - a desktop app can set any header, no CORS wall |
 | Resolve stream URLs with youtubei.js in the background worker | The web app's own in-webview resolver (`streamResolver.ts` steps 3-4, youtubei.js VISIONOS + decipher), with its fetch routed through `proxy_fetch` |
 | Strip Origin/Referer on googlevideo media (403 fix) | Local Rust stream server (`src-tauri/src/stream.rs`) - media bytes flow through Rust, which sends no Origin/Referer and forwards Range for seeking |
-| Read SAPISID cookies, SAPISIDHASH auth | Not ported yet - see below |
-| Discord Rich Presence | Not wired up yet - see below |
+| Read SAPISID cookies, SAPISIDHASH auth | In-app Google sign-in window (`src-tauri/src/auth.rs`) + `desktopAuth.ts` (cookies stay in Rust; account calls signed & rate-limited, streams stay anonymous) |
+| Lyrics proxy (15 sources + Musixmatch cookie) | Rust `lyrics_fetch` command (`src-tauri/src/lyrics.rs`) |
+| Discord Rich Presence | Native Discord IPC over `\\.\pipe\discord-ipc-0..9` (`src-tauri/src/discord.rs`) - no Discord user token required |
 
 The web app's single integration point is `src/api/bridgeClient.ts`. In the
 desktop shell it detects `window.__TAURI_INTERNALS__` and answers the same
@@ -44,16 +45,15 @@ bootstraps WebView2 on end-user machines).
 
 Phase 1 (this branch):
 
-- [x] Tauri 2 shell around the existing Vite build (NSIS setup.exe)
+- [x] Tauri 2 shell around the existing Vite build (NSIS setup.exe, `currentUser` install mode)
 - [x] Bridge transport swap: `bridgeClient` -> native commands on desktop
-- [x] InnerTube/API proxy in Rust (anonymous, authuser=0)
+- [x] InnerTube/API proxy in Rust with two-identity account safety (signed + token-bucket rate limiter for account features; anonymous for stream resolution)
 - [x] In-webview stream resolution (VISIONOS + decipher fallback)
-- [x] Localhost media stream server with Range support
+- [x] Localhost media stream server with chunked `&range=` fast start, connection pooling, and Range support
+- [x] Signed-in session support: in-app Google login window (`src-tauri/src/auth.rs`) + multi-account & brand-channel discovery (`desktopAuth.ts`) + YouTube history playback reporting (`playbackReporting.ts`)
+- [x] 15-source Lyrics Engine proxy in Rust (`src-tauri/src/lyrics.rs`)
+- [x] Native Discord Rich Presence over local IPC pipe (`src-tauri/src/discord.rs`)
 - [x] CI workflow producing the Windows installer
-- [ ] Signed-in session support: port the extension's SAPISID/SAPISIDHASH
-      auth (`apps/extension/src/background/auth.ts`) - the app will hold its
-      own YouTube login in its own window
-- [ ] Discord Rich Presence (can connect directly from the app, no extension)
 - [ ] Code signing + auto-updater
 
 Phase 2 (bit-perfect audio):

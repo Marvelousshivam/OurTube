@@ -46,7 +46,7 @@ function validateProxyUrl(rawUrl: string): {
     if (parsed.pathname.startsWith('/s/player/') || parsed.pathname === '/sw.js_data') {
       return { allowed: true, isPublicAsset: true, parsed };
     }
-    if (parsed.pathname.startsWith(ALLOWED_INNERTUBE_PREFIX)) {
+    if (parsed.pathname.startsWith(ALLOWED_INNERTUBE_PREFIX) || parsed.pathname.startsWith('/api/stats/')) {
       return { allowed: true, isPublicAsset: false, parsed };
     }
     return { allowed: false, isPublicAsset: false };
