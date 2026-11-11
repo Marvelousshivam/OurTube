@@ -809,6 +809,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const hasEnabledAddons =
         settings.losslessEnabled && settings.losslessAddons.some((a) => a.enabled);
 
+      console.log(
+        `[OurTube Stream] Activating track "${track.title}" (mode: ${mode}, losslessEnabled: ${settings.losslessEnabled}, enabledAddons: ${settings.losslessAddons.filter((a) => a.enabled).length})`
+      );
+
       const ytPromise = resolveStream({
         videoId: track.id,
         quality: get().videoQuality,
@@ -828,6 +832,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       if (losslessRes?.url) {
+        console.log(`[OurTube Stream] Playing lossless FLAC stream via ${losslessRes.addonName}: ${losslessRes.badgeText}`);
         const isDacBitPerfect =
           settings.dacBitPerfectExclusive &&
           typeof window !== 'undefined' &&

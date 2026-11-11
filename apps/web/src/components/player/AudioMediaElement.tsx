@@ -161,6 +161,7 @@ export const AudioMediaElement: React.FC = () => {
       if (lastDacUrlRef.current !== streamAudioUrl) {
         lastDacUrlRef.current = streamAudioUrl;
         setBuffering(true);
+        console.log('[OurTube DAC] Starting bit-perfect WASAPI exclusive stream:', streamAudioUrl);
         invoke('dac_play', { url: streamAudioUrl, exclusive: true }).catch((err) => {
           console.warn('[OurTube DAC] Play error:', err);
           // Fallback to normal audio

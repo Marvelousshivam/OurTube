@@ -222,11 +222,14 @@ export async function resolveLosslessForTrack(
   }
 
   const cleanTitle = cleanTrackTitle(track.title);
-  const primaryArtist = (track.artist || '').split(/[,&]/)[0].trim();
+  const fullArtistNorm = normalizeStr(track.artist || '');
+  const primaryArtist = (track.artist || '').split(/[,&/]/)[0].trim();
   const normCleanTitle = normalizeStr(cleanTitle);
   const normArtist = normalizeStr(primaryArtist);
   const targetDuration = track.duration || 0;
   const isTargetPlaceholder = isPlaceholderDuration(targetDuration);
+
+  console.log(`[OurTube Lossless] Resolving track "${track.title}" by "${track.artist}" across ${enabledAddons.length} enabled addon(s)`);
 
   // Query each enabled addon concurrently
   const addonPromises = enabledAddons.map(async (addon): Promise<ResolvedLosslessStream | null> => {
@@ -252,106 +255,121 @@ export async function resolveLosslessForTrack(
       const candidates = res.data.tracks;
 
       // Score candidates to find the highest-fidelity match
-      let bestMatch: LosslessTrackCandidate | null = null;
-      let bestScore = -1;
+      const scoredCandidates = candidates
+        .filter((c) => Boolean(c.id && c.title))
+        .map((c) => {
+          const candTitleNorm = normalizeStr(c.title);
+          const candArtistNorm = normalizeStr(c.artist || '');
 
-      for (const c of candidates) {
-        if (!c.id || !c.title) continue;
+          const titleExact = candTitleNorm === normCleanTitle;
+          const titleContains =
+            candTitleNorm.includes(normCleanTitle) || normCleanTitle.includes(candTitleNorm);
 
-        const candTitleNorm = normalizeStr(c.title);
-        const candArtistNorm = normalizeStr(c.artist || '');
+          if (!titleExact && !titleContains) return { candidate: c, score: -1 };
 
-        const titleExact = candTitleNorm === normCleanTitle;
-        const titleContains =
-          candTitleNorm.includes(normCleanTitle) || normCleanTitle.includes(candTitleNorm);
+          const fullArtistExact = candArtistNorm === fullArtistNorm;
+          const artistExact = !normArtist || candArtistNorm === normArtist;
+          const artistContains =
+            !normArtist ||
+            candArtistNorm.includes(normArtist) ||
+            normArtist.includes(candArtistNorm) ||
+            candArtistNorm.includes(fullArtistNorm) ||
+            fullArtistNorm.includes(candArtistNorm);
 
-        if (!titleExact && !titleContains) continue;
+          const isLossless =
+            c.format?.toLowerCase() === 'flac' ||
+            c.audioQuality?.toUpperCase() === 'LOSSLESS' ||
+            c.audioQuality?.toUpperCase() === 'HI_RES' ||
+            c.audioQuality?.toUpperCase() === 'HI_RES_LOSSLESS';
 
-        const artistExact = !normArtist || candArtistNorm === normArtist;
-        const artistContains =
-          !normArtist ||
-          candArtistNorm.includes(normArtist) ||
-          normArtist.includes(candArtistNorm);
+          let score = 0;
+          // Substantial bonus for verified lossless FLAC
+          if (isLossless) score += 150;
+          else if (c.format?.toLowerCase() === 'mp3') score -= 80;
 
-        // Score based on title & artist accuracy
-        let score = 0;
-        if (titleExact) score += 60;
-        else score += 30;
+          if (titleExact) score += 60;
+          else score += 30;
 
-        if (artistExact) score += 40;
-        else if (artistContains) score += 25;
-        else if (titleExact) score += 10; // title was exact, artist might be credited under label
+          if (fullArtistExact) score += 50;
+          else if (artistExact) score += 40;
+          else if (artistContains) score += 25;
+          else if (titleExact) score += 10;
 
-        // Duration matching: ignore if target or candidate has a placeholder duration (210, 180, 240, 0)
-        const hasRealTarget = !isTargetPlaceholder;
-        const hasRealCand = !isPlaceholderDuration(c.duration);
+          // Duration matching: ignore if target or candidate has a placeholder duration (210, 180, 240, 0)
+          const hasRealTarget = !isTargetPlaceholder;
+          const hasRealCand = !isPlaceholderDuration(c.duration);
 
-        if (hasRealTarget && hasRealCand && c.duration) {
-          const delta = Math.abs(c.duration - targetDuration);
-          if (delta <= 4) score += 30;
-          else if (delta <= 12) score += 20;
-          else if (delta <= 25) score += 10;
-          else if (delta > 45 && !titleExact) {
-            // Far off duration and not exact title: likely an extended remix or different song
-            continue;
+          if (hasRealTarget && hasRealCand && c.duration) {
+            const delta = Math.abs(c.duration - targetDuration);
+            if (delta <= 4) score += 30;
+            else if (delta <= 12) score += 20;
+            else if (delta <= 25) score += 10;
+            else if (delta > 45 && !titleExact) {
+              return { candidate: c, score: -1 };
+            }
           }
-        }
 
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = c;
-        }
-      }
+          return { candidate: c, score };
+        })
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score);
 
-      if (!bestMatch) {
+      if (scoredCandidates.length === 0) {
         return null;
       }
 
-      // Resolve stream URL: try hi_res_lossless first, then lossless
-      let streamUrl = `${addon.baseUrl}/stream/${encodeURIComponent(bestMatch.id)}?quality=hi_res_lossless&atmos=auto`;
-      let streamRes = await fetchAddonJson<any>(streamUrl, trackerToken);
+      // Try resolving stream for top candidates in ranked order until one returns valid audio
+      for (const { candidate: match } of scoredCandidates.slice(0, 3)) {
+        let streamUrl = `${addon.baseUrl}/stream/${encodeURIComponent(match.id)}?quality=hi_res_lossless&atmos=auto`;
+        let streamRes = await fetchAddonJson<any>(streamUrl, trackerToken);
 
-      if (!streamRes.ok || !streamRes.data?.url) {
-        streamUrl = `${addon.baseUrl}/stream/${encodeURIComponent(bestMatch.id)}?quality=lossless&atmos=auto`;
-        streamRes = await fetchAddonJson<any>(streamUrl, trackerToken);
+        if (!streamRes.ok || !streamRes.data?.url) {
+          streamUrl = `${addon.baseUrl}/stream/${encodeURIComponent(match.id)}?quality=lossless&atmos=auto`;
+          streamRes = await fetchAddonJson<any>(streamUrl, trackerToken);
+        }
+
+        if (!streamRes.ok || !streamRes.data?.url) {
+          continue;
+        }
+
+        const streamData = streamRes.data;
+        const sampleRate = Number(streamData.sampleRate) || 44100;
+        const bitDepth =
+          Number(streamData.bitDepth) ||
+          (streamData.quality?.toLowerCase().includes('hi-res') ? 24 : 16);
+        const bitrateKbps =
+          Number(streamData.bitrate) || Math.round((sampleRate * bitDepth * 2) / 1000);
+        const codec = (streamData.codec || streamData.format || 'flac').toUpperCase();
+
+        const rateKhz = (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1);
+        const isHiRes = bitDepth >= 24 || sampleRate >= 88200;
+
+        const badgeText = `${bitDepth}-BIT / ${rateKhz}KHZ ${codec} • ${isHiRes ? 'HI-RES' : 'LOSSLESS'}`;
+        const shortBadgeText = `${bitDepth}-BIT ${codec}`;
+
+        const resolved: ResolvedLosslessStream = {
+          url: streamData.url,
+          codec,
+          format: streamData.format || 'flac',
+          bitDepth,
+          sampleRate,
+          bitrateKbps,
+          badgeText,
+          shortBadgeText,
+          addonName: addon.name,
+          candidateTitle: match.title,
+          candidateArtist: match.artist
+        };
+
+        if (isTauri) {
+          invoke('allow_stream_url', { url: resolved.url }).catch(() => {});
+        }
+
+        console.log(`[OurTube Lossless] Match found from ${addon.name}: "${match.title}" by "${match.artist}" -> ${resolved.badgeText}`);
+        return resolved;
       }
 
-      if (!streamRes.ok || !streamRes.data?.url) {
-        return null;
-      }
-
-      const streamData = streamRes.data;
-      const sampleRate = Number(streamData.sampleRate) || 44100;
-      const bitDepth = Number(streamData.bitDepth) || (streamData.quality?.toLowerCase().includes('hi-res') ? 24 : 16);
-      const bitrateKbps = Number(streamData.bitrate) || Math.round((sampleRate * bitDepth * 2) / 1000);
-      const codec = (streamData.codec || streamData.format || 'flac').toUpperCase();
-
-      const rateKhz = (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1);
-      const isHiRes = bitDepth >= 24 || sampleRate >= 88200;
-
-      const badgeText = `${bitDepth}-BIT / ${rateKhz}KHZ ${codec} • ${isHiRes ? 'HI-RES' : 'LOSSLESS'}`;
-      const shortBadgeText = `${bitDepth}-BIT ${codec}`;
-
-      const resolved: ResolvedLosslessStream = {
-        url: streamData.url,
-        codec,
-        format: streamData.format || 'flac',
-        bitDepth,
-        sampleRate,
-        bitrateKbps,
-        badgeText,
-        shortBadgeText,
-        addonName: addon.name,
-        candidateTitle: bestMatch.title,
-        candidateArtist: bestMatch.artist
-      };
-
-      // Register URL with local stream server allowlist on desktop
-      if (isTauri) {
-        invoke('allow_stream_url', { url: resolved.url }).catch(() => {});
-      }
-
-      return resolved;
+      return null;
     } catch (err) {
       console.warn(`[OurTube Lossless] Error querying addon ${addon.name}:`, err);
       return null;
@@ -367,5 +385,6 @@ export async function resolveLosslessForTrack(
     }
   }
 
+  console.log(`[OurTube Lossless] No lossless candidate resolved for "${track.title}"; falling back to studio stream`);
   return null;
 }
