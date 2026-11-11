@@ -3,7 +3,7 @@ name: 'desktop-build'
 on:
   push:
     branches:
-      - desktop/tauri-shell
+      - desktop
   workflow_dispatch:
 
 jobs:
