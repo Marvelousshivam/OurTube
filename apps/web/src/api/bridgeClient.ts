@@ -5,6 +5,8 @@ import {
   AuthState,
   FetchRequestPayload,
   FetchResponsePayload,
+  LyricsFetchRequestPayload,
+  LyricsFetchResponsePayload,
   StreamResolutionRequest,
   StreamResolutionResponse,
   YtAccount,
@@ -21,7 +23,14 @@ const INITIAL_AUTH_STATE: AuthState = {
 };
 
 function sanitizeAuthState(state: AuthState): AuthState {
-  if (!state || !state.accounts) return state;
+  if (!state) return INITIAL_AUTH_STATE;
+  // Never allow raw session secrets or cookies to exist in the web app context or localStorage
+  const raw = state as unknown as Record<string, unknown>;
+  delete raw.sapisid;
+  delete raw.sapisidHash;
+  delete raw.cookies;
+
+  if (!state.accounts) return state;
   for (const acc of state.accounts) {
     if (acc.channels) {
       for (const ch of acc.channels) {
@@ -49,16 +58,25 @@ function loadCachedAuth(): AuthState {
     const cached = localStorage.getItem('ourtube_auth_cache');
     if (cached) {
       const parsed = JSON.parse(cached);
+      const hadLeakedSecrets = Boolean(parsed?.sapisid || parsed?.sapisidHash || parsed?.cookies);
       if (parsed && Array.isArray(parsed.accounts)) {
-        // Filter out legacy hardcoded placeholder accounts if present in old cache
+        // Filter out legacy placeholder or duplicate avatar-less entries when a full account entry exists
         parsed.accounts = parsed.accounts.filter(
-          (a: YtAccount) =>
+          (a: YtAccount, idx: number, arr: YtAccount[]) =>
             a.email !== 'account2@gmail.com' &&
             a.name !== 'Secondary Google Account' &&
-            !(a.email === 'shivamraj6577@gmail.com' && !a.avatarUrl)
+            !(
+              !a.avatarUrl &&
+              a.email &&
+              arr.some((other, oIdx) => oIdx !== idx && other.email === a.email && Boolean(other.avatarUrl))
+            )
         );
-        if (parsed.accounts.length > 0) {
-          return sanitizeAuthState(parsed);
+        const cleaned = sanitizeAuthState(parsed);
+        if (hadLeakedSecrets) {
+          saveCachedAuth(cleaned);
+        }
+        if (cleaned.accounts.length > 0) {
+          return cleaned;
         }
       }
     }
@@ -71,7 +89,8 @@ function loadCachedAuth(): AuthState {
 function saveCachedAuth(state: AuthState) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem('ourtube_auth_cache', JSON.stringify(state));
+    const cleaned = sanitizeAuthState({ ...state });
+    localStorage.setItem('ourtube_auth_cache', JSON.stringify(cleaned));
   } catch {
     // ignore
   }
@@ -338,6 +357,20 @@ class BridgeClient {
       throw new Error('Extension bridge not connected. Please install the OurTube Companion Extension.');
     }
     return this.sendRequest<FetchResponsePayload>('KODA_BRIDGE_FETCH', payload);
+  }
+
+  public async lyricsFetch(
+    payload: LyricsFetchRequestPayload,
+    timeoutMs: number = 15000
+  ): Promise<LyricsFetchResponsePayload | null> {
+    if (!this.isAvailable) {
+      return null;
+    }
+    try {
+      return await this.sendRequest<LyricsFetchResponsePayload>('KODA_BRIDGE_LYRICS_FETCH', payload, timeoutMs);
+    } catch {
+      return null;
+    }
   }
 
   public async scrapeYouTubePage(url?: string): Promise<any> {

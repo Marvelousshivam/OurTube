@@ -362,12 +362,25 @@ export async function discoverAccounts(): Promise<{ accounts: YtAccount[]; webIn
   return { accounts, webIndex };
 }
 
+const AUTH_CACHE_TTL_MS = 5 * 60 * 1000;
+let inFlightAuthPromise: Promise<AuthState> | null = null;
+
 export async function getAuthState(forceRefresh: boolean = false): Promise<AuthState> {
   const now = Date.now();
-  if (!forceRefresh && cachedAuth && now - cachedAuth.time < 45000) {
+  if (!forceRefresh && cachedAuth && now - cachedAuth.time < AUTH_CACHE_TTL_MS) {
     return cachedAuth.data;
   }
+  if (!forceRefresh && inFlightAuthPromise) {
+    return inFlightAuthPromise;
+  }
 
+  inFlightAuthPromise = _computeAuthState().finally(() => {
+    inFlightAuthPromise = null;
+  });
+  return inFlightAuthPromise;
+}
+
+async function _computeAuthState(): Promise<AuthState> {
   const secret = await getSigningSecret();
   const selectedChannelId = await getSelectedChannelId();
 
@@ -380,7 +393,6 @@ export async function getAuthState(forceRefresh: boolean = false): Promise<AuthS
     };
   }
 
-  const sapisidHash = await calculateSapisidHash(secret, MUSIC_ORIGIN);
   const { accounts, webIndex } = await discoverAccounts();
 
   if (accounts.length === 0) {
@@ -435,8 +447,6 @@ export async function getAuthState(forceRefresh: boolean = false): Promise<AuthS
 
   const result: AuthState = {
     isAuthenticated: true,
-    sapisid: secret,
-    sapisidHash,
     accounts,
     selectedChannelId: selectedChannel?.id || null,
     selectedChannel

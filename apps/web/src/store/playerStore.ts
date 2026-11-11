@@ -33,6 +33,8 @@ import {
 } from '../playback/queueTimeline';
 import { innertubeService } from '../api/innertubeService';
 import { lyricsService } from '../api/lyricsService';
+import type { LyricsSourceId } from '../lyrics/sources';
+import type { SourceState } from '../lyrics/repository';
 
 // Monotonic request counter for bulletproof track activation and race-condition prevention
 let activePlaybackToken = 0;
@@ -122,6 +124,12 @@ interface PlayerState {
   autoplay: boolean;
   lyricsData: LyricsData | null;
   isLyricsLoading: boolean;
+  lyricsSourceStates: Partial<Record<LyricsSourceId, SourceState>>;
+  selectedLyricsSource: LyricsSourceId | null;
+  lyricsTimingOffsetMs: number;
+  setSelectedLyricsSource: (source: LyricsSourceId | null) => Promise<void>;
+  setLyricsTimingOffsetMs: (offsetMs: number) => void;
+  reloadCurrentLyrics: () => Promise<void>;
 
   // Video Mode State & Actions (Matching Koda VideoPlayerContent)
   currentVideo: VideoItem | null;
@@ -221,6 +229,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   autoplay: localStorage.getItem('koda_auto_load_queue') !== 'false' && localStorage.getItem('ourtube_autoplay') !== 'false',
   lyricsData: null,
   isLyricsLoading: false,
+  lyricsSourceStates: {},
+  selectedLyricsSource: null,
+  lyricsTimingOffsetMs: 0,
   currentVideo: null,
   isVideoWatchOpen: false,
   isMiniVideoPlayerOpen: false,
@@ -269,12 +280,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   preloadRelatedVideoStreams: (videoIds: string[]) => {
     const quality = get().videoQuality;
-    videoIds.slice(0, 3).forEach((id, idx) => {
-      if (!id) return;
-      setTimeout(() => {
-        prefetchVideoStream(id, quality);
-      }, idx * 280);
-    });
+    const firstId = videoIds.find((id) => Boolean(id));
+    if (!firstId) return;
+    setTimeout(() => {
+      prefetchVideoStream(firstId, quality);
+    }, 1500);
   },
 
   setAudioTrack: async (trackId: string) => {
@@ -435,7 +445,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
             selectedAudioTrackId: res.selectedAudioTrackId || null,
             captionTracks: res.captionTracks || [],
             isBuffering: false,
-            videoPlaybackError: 'Direct video stream could not be loaded. Tap below to retry or switch to embedded player.'
+            videoPlaybackError: 'Direct video stream could not be loaded. Tap Retry Stream below.'
           });
         } else {
           set({
@@ -454,7 +464,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (token === activePlaybackToken) {
         set({
           isBuffering: false,
-          videoPlaybackError: 'Stream resolution failed. Tap below to retry or switch to embedded player.'
+          videoPlaybackError: 'Stream resolution failed. Tap Retry Stream below.'
         });
       }
     }
@@ -583,13 +593,33 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   loadLyricsForTrack: async (track: TrackMetadata, reqToken?: number) => {
-    set({ isLyricsLoading: true });
+    const activeOnly = get().selectedLyricsSource ?? undefined;
+    set({
+      isLyricsLoading: true,
+      ...(activeOnly ? {} : { lyricsSourceStates: {} })
+    });
     try {
+      // Avoid passing the dummy 210s placeholder duration from cards without duration labels
+      const rawDur = track.duration && track.duration !== 210 ? track.duration : (get().duration && get().duration !== 210 ? get().duration : 0);
       const data = await lyricsService.getLyrics(
         track.title,
         track.artist,
-        track.duration || 0,
-        track.id
+        rawDur,
+        track.id,
+        track.album || null,
+        {
+          only: activeOnly,
+          onSource: (source, state) => {
+            if (get().currentTrack?.id === track.id) {
+              set((prev) => ({
+                lyricsSourceStates: {
+                  ...prev.lyricsSourceStates,
+                  [source]: state
+                }
+              }));
+            }
+          }
+        }
       );
       // Sequence token check: only apply lyrics if this request hasn't been superseded
       if ((reqToken === undefined || reqToken === activePlaybackToken) && get().currentTrack?.id === track.id) {
@@ -600,6 +630,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if ((reqToken === undefined || reqToken === activePlaybackToken) && get().currentTrack?.id === track.id) {
         set({ lyricsData: null, isLyricsLoading: false });
       }
+    }
+  },
+
+  setSelectedLyricsSource: async (source: LyricsSourceId | null) => {
+    set({ selectedLyricsSource: source });
+    const track = get().currentTrack;
+    if (track) {
+      await get().loadLyricsForTrack(track);
+    }
+  },
+
+  setLyricsTimingOffsetMs: (offsetMs: number) => {
+    set({ lyricsTimingOffsetMs: Math.max(-10000, Math.min(10000, Math.round(offsetMs))) });
+  },
+
+  reloadCurrentLyrics: async () => {
+    const track = get().currentTrack;
+    if (track) {
+      await get().loadLyricsForTrack(track);
     }
   },
 
@@ -684,14 +733,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           quality: get().videoQuality,
           mode: get().playbackMode
         }).catch(() => {});
-
-        // Pre-fetch lyrics into hot cache for instant display
-        lyricsService.getLyrics(
-          track.title,
-          track.artist,
-          track.duration || 0,
-          track.id
-        ).catch(() => {});
       } catch {}
     }
   },
@@ -711,6 +752,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       streamVideoUrl: null,
       lyricsData: null,
       isLyricsLoading: true,
+      lyricsSourceStates: {},
+      selectedLyricsSource: null,
+      lyricsTimingOffsetMs: 0,
       isBuffering: true,
       currentTime: 0,
       duration: track.duration || 0
@@ -942,17 +986,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setPlaybackMode: (mode: PlaybackMode) => {
-    set({ playbackMode: mode });
     const current = get().currentTrack;
+    const savedTime = get().currentTime;
+    set({ playbackMode: mode });
     if (current) {
       resolveStream({
         videoId: current.id,
         quality: get().videoQuality,
         mode
       }).then((res) => {
+        const latestTime = get().currentTime || savedTime;
         set({
           streamAudioUrl: res.audioUrl || get().streamAudioUrl,
-          streamVideoUrl: res.videoUrl || null
+          streamVideoUrl: res.videoUrl || null,
+          seekTarget: latestTime > 0.5 ? { time: latestTime, nonce: ++seekNonceCounter } : get().seekTarget
         });
       });
     }

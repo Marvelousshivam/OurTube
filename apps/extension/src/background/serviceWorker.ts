@@ -1,6 +1,7 @@
 import { BridgeRequest, BridgeResponse } from '@koda/bridge-types';
 import { getAuthState, setSelectedChannelId } from './auth';
 import { handleProxyFetch, handleStreamResolution, handleScrapePage } from './proxy';
+import { handleLyricsFetch, installMusixmatchCookieRule } from './lyricsProxy';
 import { installDynamicRules, installExtensionFetchRule, installDiscordFetchRule, ensureOriginDNRRules } from './rules';
 import {
   discordState,
@@ -12,18 +13,38 @@ import {
 
 console.log('[OurTube Companion] Background Service Worker initialized.');
 
+const ALLOWED_PRODUCTION_ORIGINS = new Set([
+  'https://ourtube-zeta.vercel.app'
+]);
+
+export function isTrustedBridgeOrigin(originOrUrl?: string | null): boolean {
+  if (!originOrUrl) return false;
+  try {
+    const parsed = new URL(originOrUrl);
+    if (ALLOWED_PRODUCTION_ORIGINS.has(parsed.origin)) return true;
+    if (
+      parsed.protocol === 'http:' &&
+      (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function autoInjectExistingTabs() {
   try {
     const tabs = await chrome.tabs.query({
       url: [
         'http://localhost/*',
         'http://127.0.0.1/*',
-        'https://*.vercel.app/*',
         'https://ourtube-zeta.vercel.app/*'
       ]
     });
     for (const tab of tabs) {
-      if (tab.id) {
+      if (tab.id && isTrustedBridgeOrigin(tab.url)) {
         chrome.scripting.executeScript({
           target: { tabId: tab.id },
           files: ['bridge.js']
@@ -40,6 +61,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   await installDynamicRules();
   await installExtensionFetchRule();
   await installDiscordFetchRule();
+  await installMusixmatchCookieRule();
   await autoInjectExistingTabs();
 });
 
@@ -47,6 +69,7 @@ chrome.runtime.onStartup.addListener(async () => {
   await installDynamicRules();
   await installExtensionFetchRule();
   await installDiscordFetchRule();
+  await installMusixmatchCookieRule();
   await autoInjectExistingTabs();
 });
 
@@ -55,7 +78,6 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
 
   const resChannel = message.channel === 'OURTUBE_BRIDGE_REQ' ? 'OURTUBE_BRIDGE_RES' : 'KODA_BRIDGE_RES';
 
-  // Automatically register DNR rules for whichever origin or preview domain is sending requests
   const senderOrigin = _sender?.origin || (() => {
     try {
       return _sender?.url ? new URL(_sender.url).origin : '';
@@ -63,9 +85,20 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
       return '';
     }
   })();
-  if (senderOrigin) {
-    ensureOriginDNRRules(senderOrigin).catch(() => {});
+
+  if (!isTrustedBridgeOrigin(senderOrigin)) {
+    console.warn('[OurTube Companion] Blocked bridge message from untrusted origin:', senderOrigin);
+    sendResponse({
+      channel: resChannel,
+      id: message.id,
+      type: message.type,
+      success: false,
+      error: 'Untrusted sender origin'
+    });
+    return false;
   }
+
+  ensureOriginDNRRules(senderOrigin).catch(() => {});
 
   (async () => {
     try {
@@ -131,6 +164,21 @@ chrome.runtime.onMessage.addListener((message: BridgeRequest, _sender, sendRespo
             type: message.type,
             success: true,
             data: fetchResult
+          };
+          sendResponse(response);
+          break;
+        }
+
+        case 'OURTUBE_BRIDGE_LYRICS_FETCH' as any:
+        case 'KODA_BRIDGE_LYRICS_FETCH': {
+          await installMusixmatchCookieRule();
+          const lyricsResult = await handleLyricsFetch(message.payload);
+          const response: BridgeResponse = {
+            channel: resChannel,
+            id: message.id,
+            type: message.type,
+            success: true,
+            data: lyricsResult
           };
           sendResponse(response);
           break;

@@ -625,13 +625,31 @@ export const KodaVideoShaderCanvas: React.FC<KodaVideoShaderCanvasProps> = ({
     const uSaturation = gl.getUniformLocation(program, 'uSaturation');
 
     let rafId = 0;
+    let idleTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
     const startTime = performance.now();
+
+    const scheduleNextFrame = () => {
+      if (cancelled) return;
+      const v = videoRef.current;
+      if (document.hidden) {
+        idleTimeoutId = setTimeout(() => {
+          rafId = requestAnimationFrame(renderFrame);
+        }, 500);
+      } else if (!v || (v.paused && !v.seeking)) {
+        // While paused, poll gently at ~4fps so live shader slider tweaks still preview without burning 60fps GPU
+        idleTimeoutId = setTimeout(() => {
+          rafId = requestAnimationFrame(renderFrame);
+        }, 250);
+      } else {
+        rafId = requestAnimationFrame(renderFrame);
+      }
+    };
 
     const renderFrame = () => {
       if (cancelled) return;
       const v = videoRef.current;
-      if (v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
+      if (v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0 && !document.hidden) {
         if (canvas.width !== v.videoWidth || canvas.height !== v.videoHeight) {
           canvas.width = v.videoWidth;
           canvas.height = v.videoHeight;
@@ -665,13 +683,14 @@ export const KodaVideoShaderCanvas: React.FC<KodaVideoShaderCanvasProps> = ({
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
 
-      rafId = requestAnimationFrame(renderFrame);
+      scheduleNextFrame();
     };
 
     rafId = requestAnimationFrame(renderFrame);
 
     return () => {
       cancelled = true;
+      if (idleTimeoutId !== null) clearTimeout(idleTimeoutId);
       cancelAnimationFrame(rafId);
       gl.deleteTexture(texture);
       gl.deleteBuffer(posBuffer);
@@ -684,7 +703,6 @@ export const KodaVideoShaderCanvas: React.FC<KodaVideoShaderCanvasProps> = ({
     corsBlocked,
     settings.activePreset,
     settings.customShaderSource,
-    isPlaying,
     videoRef
   ]);
 

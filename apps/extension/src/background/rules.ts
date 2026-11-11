@@ -111,7 +111,7 @@ export async function installExtensionFetchRule(): Promise<void> {
 }
 
 const LOCAL_DOMAINS = ['localhost', '127.0.0.1'];
-const VERCEL_DOMAINS = ['ourtube-zeta.vercel.app', 'vercel.app'];
+const VERCEL_DOMAINS = ['ourtube-zeta.vercel.app'];
 
 export async function installDynamicRules() {
   const localRules: chrome.declarativeNetRequest.Rule[] = [
@@ -206,24 +206,6 @@ export async function installDynamicRules() {
           { header: 'Origin', operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE },
           { header: 'Referer', operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE }
         ],
-        responseHeaders: CORS_RESPONSE
-      }
-    },
-    // 6. iframe_api bootstrap (Localhost)
-    {
-      id: 6,
-      priority: 2,
-      condition: {
-        urlFilter: '||www.youtube.com/iframe_api',
-        initiatorDomains: LOCAL_DOMAINS,
-        resourceTypes: [
-          chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-          chrome.declarativeNetRequest.ResourceType.SCRIPT,
-          chrome.declarativeNetRequest.ResourceType.OTHER
-        ]
-      },
-      action: {
-        type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
         responseHeaders: CORS_RESPONSE
       }
     },
@@ -342,24 +324,6 @@ export async function installDynamicRules() {
         responseHeaders: VERCEL_CORS_RESPONSE
       }
     },
-    // 26. iframe_api bootstrap (Vercel)
-    {
-      id: 26,
-      priority: 2,
-      condition: {
-        urlFilter: '||www.youtube.com/iframe_api',
-        initiatorDomains: VERCEL_DOMAINS,
-        resourceTypes: [
-          chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-          chrome.declarativeNetRequest.ResourceType.SCRIPT,
-          chrome.declarativeNetRequest.ResourceType.OTHER
-        ]
-      },
-      action: {
-        type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
-        responseHeaders: VERCEL_CORS_RESPONSE
-      }
-    },
     // 27. Player script (Vercel)
     {
       id: 27,
@@ -394,14 +358,19 @@ export async function installDynamicRules() {
 }
 
 /**
- * Dynamically registers DNR rules for any other custom or preview deployment origin (e.g. preview-xyz.vercel.app).
+ * Dynamically registers DNR rules only for approved local development ports.
  */
 export async function ensureOriginDNRRules(origin: string): Promise<void> {
   if (!origin || origin.startsWith('chrome-extension://')) return;
   try {
     const urlObj = new URL(origin);
     const domain = urlObj.hostname;
-    if (origin === 'http://localhost:5173' || origin === 'https://ourtube-zeta.vercel.app') {
+    const isLocalDev =
+      urlObj.protocol === 'http:' && (domain === 'localhost' || domain === '127.0.0.1');
+    if (!isLocalDev) {
+      return;
+    }
+    if (origin === 'http://localhost:5173') {
       return;
     }
 
@@ -497,23 +466,6 @@ export async function ensureOriginDNRRules(origin: string): Promise<void> {
               { header: 'Origin', operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE },
               { header: 'Referer', operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE }
             ],
-            responseHeaders: customCors
-          }
-        },
-        {
-          id: 36,
-          priority: 4,
-          condition: {
-            urlFilter: '||www.youtube.com/iframe_api',
-            initiatorDomains: domainList,
-            resourceTypes: [
-              chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-              chrome.declarativeNetRequest.ResourceType.SCRIPT,
-              chrome.declarativeNetRequest.ResourceType.OTHER
-            ]
-          },
-          action: {
-            type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
             responseHeaders: customCors
           }
         },

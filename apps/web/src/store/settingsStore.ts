@@ -423,7 +423,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   exportUserData: () => {
     try {
       const tasteState = useTasteStore.getState();
-      const auth = localStorage.getItem('ourtube_auth_cache');
       const payload = {
         version: 2,
         exportedAt: new Date().toISOString(),
@@ -452,8 +451,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           audioNormalization: get().audioNormalization,
           homeLayoutMode: get().homeLayoutMode,
           filterExplicit: get().filterExplicit
-        },
-        auth: auth ? JSON.parse(auth) : null
+        }
       };
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });

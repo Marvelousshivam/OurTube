@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 142 32" width="142" height="32">
+  <style>
+    .t { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11.5px; }
+    .m { font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size: 11px; font-weight: 700; }
+  </style>
+  <rect x="1" y="1" width="140" height="30" rx="15" fill="#1B2923" stroke="#325244" stroke-width="1"/>
+  <circle cx="16" cy="16" r="10" fill="#243D32"/>
+  <g fill="#96F2D7">
+    <path d="m14.6 18.8-2.6-2.6 1-1 1.6 1.6 3.8-3.8 1 1-4.8 4.8Z"/>
+  </g>
+  <text x="32" y="20" class="t" font-weight="600" fill="#D5C6CE">License</text>
+  <text x="128" y="20" text-anchor="end" class="m" fill="#96F2D7">MIT</text>
+</svg>

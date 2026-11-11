@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 42" width="100%">
+  <defs>
+    <linearGradient id="wave-gold" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E9C16C" stop-opacity="0"/>
+      <stop offset="25%" stop-color="#FFB1C8" stop-opacity="0.55"/>
+      <stop offset="50%" stop-color="#E9C16C" stop-opacity="0.95"/>
+      <stop offset="75%" stop-color="#D0BCFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#E9C16C" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="wave-sub" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFB1C8" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#FFB1C8" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#FFB1C8" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M 0 21 Q 150 6, 300 21 T 600 21 T 900 21 T 1200 21" fill="none" stroke="url(#wave-sub)" stroke-width="1.5">
+    <animate attributeName="d" dur="6s" repeatCount="indefinite"
+      values="M 0 21 Q 150 6, 300 21 T 600 21 T 900 21 T 1200 21;
+              M 0 21 Q 150 36, 300 21 T 600 21 T 900 21 T 1200 21;
+              M 0 21 Q 150 6, 300 21 T 600 21 T 900 21 T 1200 21"/>
+  </path>
+  <path d="M 0 21 Q 150 34, 300 21 T 600 21 T 900 21 T 1200 21" fill="none" stroke="url(#wave-gold)" stroke-width="2">
+    <animate attributeName="d" dur="6s" repeatCount="indefinite"
+      values="M 0 21 Q 150 34, 300 21 T 600 21 T 900 21 T 1200 21;
+              M 0 21 Q 150 8, 300 21 T 600 21 T 900 21 T 1200 21;
+              M 0 21 Q 150 34, 300 21 T 600 21 T 900 21 T 1200 21"/>
+  </path>
+  <!-- Center M3 Diamond Node -->
+  <rect x="594" y="15" width="12" height="12" rx="3.5" transform="rotate(45 600 21)" fill="#241A20" stroke="#E9C16C" stroke-width="1.8"/>
+  <circle cx="440" cy="21" r="2.5" fill="#FFB1C8" opacity="0.8"/>
+  <circle cx="760" cy="21" r="2.5" fill="#D0BCFF" opacity="0.8"/>
+</svg>

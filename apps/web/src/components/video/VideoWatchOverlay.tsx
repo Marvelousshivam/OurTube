@@ -101,7 +101,6 @@ export const VideoWatchOverlay: React.FC = () => {
   const [scrubberHoverTime, setScrubberHoverTime] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
-  const [useEmbedPlayer, setUseEmbedPlayer] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [clickPlayRipple, setClickPlayRipple] = useState<'play' | 'pause' | null>(null);
   const [isHoveringVolume, setIsHoveringVolume] = useState(false);
@@ -144,7 +143,6 @@ export const VideoWatchOverlay: React.FC = () => {
 
   // Reset state on new video + fetch SponsorBlock segments & ReturnYouTubeDislike count
   useEffect(() => {
-    setUseEmbedPlayer(false);
     setIsDescriptionExpanded(false);
     setIsCommentsSheetOpen(false);
     setIsChaptersSheetOpen(false);
@@ -278,7 +276,7 @@ export const VideoWatchOverlay: React.FC = () => {
 
         if (details.relatedVideos && details.relatedVideos.length > 0) {
           setRelatedVideos(details.relatedVideos);
-          preloadRelatedVideoStreams(details.relatedVideos.slice(0, 3).map((v) => v.id));
+          preloadRelatedVideoStreams(details.relatedVideos.slice(0, 1).map((v) => v.id));
         } else {
           // Fallback to channel recommendations
           innertubeService
@@ -297,7 +295,7 @@ export const VideoWatchOverlay: React.FC = () => {
                 uploadedDate: 'Related'
               }));
               setRelatedVideos(mapped);
-              preloadRelatedVideoStreams(mapped.slice(0, 3).map((v) => v.id));
+              preloadRelatedVideoStreams(mapped.slice(0, 1).map((v) => v.id));
             })
             .catch(() => {});
         }
@@ -505,7 +503,16 @@ export const VideoWatchOverlay: React.FC = () => {
         target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
           target.isContentEditable)
+      ) {
+        return;
+      }
+      // Do not double-trigger play/pause when Space or Enter is pressed on a focused button
+      if (
+        (e.key === ' ' || e.key === 'Enter') &&
+        target &&
+        (target.tagName === 'BUTTON' || target.closest('button, [role="button"]'))
       ) {
         return;
       }
@@ -1733,30 +1740,15 @@ export const VideoWatchOverlay: React.FC = () => {
         onPointerCancel={handlePointerUp}
         onClick={handleViewportClick}
       >
-        {useEmbedPlayer ? (
-          <iframe
-            src={`https://www.youtube-nocookie.com/embed/${currentVideo?.id}?autoplay=1&enablejsapi=1&playsinline=1&rel=0`}
-            title={currentVideo?.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              backgroundColor: '#000'
-            }}
-          />
-        ) : (
-          <>
-            <NativeVideoPlayerEngine
-              onEnded={() => {
-                if (autoplay && relatedVideos.length > 0) {
-                  playVideo(relatedVideos[0]);
-                } else {
-                  usePlayerStore.setState({ isPlaying: false });
-                }
-              }}
-            />
+        <NativeVideoPlayerEngine
+          onEnded={() => {
+            if (autoplay && relatedVideos.length > 0) {
+              playVideo(relatedVideos[0]);
+            } else {
+              usePlayerStore.setState({ isPlaying: false });
+            }
+          }}
+        />
 
             {/* Koda Floating Hold-and-Slide Speed Boost Badge (2.0x .. 4.0x) */}
             {isHolding2x && (
@@ -2029,27 +2021,9 @@ export const VideoWatchOverlay: React.FC = () => {
                   >
                     Retry Stream
                   </button>
-
-                  <button
-                    onClick={() => setUseEmbedPlayer(true)}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '9999px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.16)',
-                      color: '#fff',
-                      border: '1px solid rgba(255, 255, 255, 0.22)',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Switch to Embedded Player
-                  </button>
                 </div>
               </div>
             )}
-          </>
-        )}
 
         {/* Material You 3 Top Floating Bar */}
         <div

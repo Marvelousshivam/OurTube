@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 142 32" width="142" height="32">
+  <style>
+    .t { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11.5px; }
+    .m { font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size: 11px; font-weight: 700; }
+  </style>
+  <rect x="1" y="1" width="140" height="30" rx="15" fill="#1C242B" stroke="#334859" stroke-width="1"/>
+  <circle cx="16" cy="16" r="10" fill="#243746"/>
+  <g fill="#74C0FC">
+    <circle cx="16" cy="16" r="2" fill="#74C0FC"/><ellipse cx="16" cy="16" rx="6" ry="2.4" fill="none" stroke="#74C0FC" stroke-width="1.1"/><ellipse cx="16" cy="16" rx="6" ry="2.4" transform="rotate(60 16 16)" fill="none" stroke="#74C0FC" stroke-width="1.1"/><ellipse cx="16" cy="16" rx="6" ry="2.4" transform="rotate(120 16 16)" fill="none" stroke="#74C0FC" stroke-width="1.1"/>
+  </g>
+  <text x="32" y="20" class="t" font-weight="600" fill="#D5C6CE">React</text>
+  <text x="128" y="20" text-anchor="end" class="m" fill="#74C0FC">19.0</text>
+</svg>

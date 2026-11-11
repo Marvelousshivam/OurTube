@@ -11,10 +11,91 @@ async function getServerInnertube(): Promise<Innertube> {
   return serverInnertube;
 }
 
+const ALLOWED_LYRIC_HOSTS = new Set([
+  'lrc.red',
+  'lyrics-api.binimum.org',
+  'lyrics-api.boidu.dev',
+  'unison.boidu.dev',
+  'lyrics.paxsenix.org',
+  'api.paxsenix.org',
+  'lyricsplus.prjktla.my.id',
+  'lyricsplus.binimum.org',
+  'lrclib.net',
+  'mobileservice.kugou.com',
+  'lyrics.kugou.com',
+  'apic.musixmatch.com',
+  'www.musixmatch.com',
+  'genius.com',
+  'music.apple.com',
+  'amp-api.music.apple.com'
+]);
+
+const viteMxmGuid = 'd4f8a9b0-2c3e-4f5a-8b9c-0d1e2f3a4b5c';
+
 function streamResolverPlugin(): Plugin {
   return {
     name: 'koda-stream-resolver',
     configureServer(server) {
+      server.middlewares.use('/api/lyrics-proxy', async (req, res) => {
+        const reqUrl = new URL(req.url || '', `http://${req.headers.host}`);
+        const targetRaw = reqUrl.searchParams.get('url');
+        if (!targetRaw) {
+          res.statusCode = 400;
+          res.end('Missing url');
+          return;
+        }
+        try {
+          const parsed = new URL(targetRaw);
+          if (parsed.protocol !== 'https:' || !ALLOWED_LYRIC_HOSTS.has(parsed.hostname)) {
+            res.statusCode = 403;
+            res.end('Disallowed lyric host');
+            return;
+          }
+
+          const headers: Record<string, string> = {
+            Accept: 'application/json, text/plain, */*',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          };
+
+          const customAuth = req.headers['x-lyric-authorization'];
+          if (typeof customAuth === 'string' && customAuth.trim()) {
+            headers['Authorization'] = customAuth.trim();
+          }
+          if (parsed.hostname === 'amp-api.music.apple.com') {
+            headers['Origin'] = 'https://music.apple.com';
+            headers['Referer'] = 'https://music.apple.com/';
+          }
+          if (
+            parsed.hostname === 'apic.musixmatch.com' &&
+            parsed.pathname.includes('/token.get')
+          ) {
+            headers['Cookie'] = `x-mxm-token-guid=${viteMxmGuid}; mxm_bab=AB`;
+          }
+
+          const upstream = await fetch(parsed.toString(), {
+            method: 'GET',
+            headers,
+            redirect: 'follow'
+          });
+
+          const text = await upstream.text();
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(
+            JSON.stringify({
+              ok: upstream.ok,
+              status: upstream.status,
+              body: text
+            })
+          );
+        } catch (err: any) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, status: 502, body: '' }));
+        }
+      });
+
       server.middlewares.use('/api/resolve-stream', async (req, res) => {
         const url = new URL(req.url || '', `http://${req.headers.host}`);
         const videoId = url.searchParams.get('videoId');
@@ -56,7 +137,7 @@ function streamResolverPlugin(): Plugin {
                 const heightDiff = (b.height || 0) - (a.height || 0);
                 if (heightDiff !== 0) return heightDiff;
                 // Prefer H.264 (avc1) for hardware decode efficiency & zero-stutter compatibility
-                const aAvc = f.mimeType?.includes('avc1') ? 1 : 0;
+                const aAvc = a.mimeType?.includes('avc1') ? 1 : 0;
                 const bAvc = b.mimeType?.includes('avc1') ? 1 : 0;
                 return bAvc - aAvc;
               });
@@ -71,7 +152,11 @@ function streamResolverPlugin(): Plugin {
             bestVideo =
               videoFormats.find((f) => f.height === targetHeight && f.mimeType?.includes('avc1')) ||
               videoFormats.find((f) => f.height === targetHeight) ||
+              videoFormats.find(
+                (f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720 && f.mimeType?.includes('avc1')
+              ) ||
               videoFormats.find((f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720) ||
+              videoFormats.find((f) => f.mimeType?.includes('avc1')) ||
               videoFormats[0];
 
             if (!bestVideo && muxedFormats.length > 0) {

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 32" width="132" height="32">
+  <style>
+    .t { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11.5px; }
+    .m { font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size: 11px; font-weight: 700; }
+  </style>
+  <rect x="1" y="1" width="130" height="30" rx="15" fill="#251F2E" stroke="#48395E" stroke-width="1"/>
+  <circle cx="16" cy="16" r="10" fill="#362B47"/>
+  <g fill="#D0BCFF">
+    <path d="M16.8 10.5 12.5 16.5h3l-.8 5 4.8-6h-3l.3-5Z"/>
+  </g>
+  <text x="32" y="20" class="t" font-weight="600" fill="#D5C6CE">Vite</text>
+  <text x="118" y="20" text-anchor="end" class="m" fill="#D0BCFF">6.1</text>
+</svg>

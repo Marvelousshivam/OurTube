@@ -3,7 +3,7 @@ import { usePlayerStore } from '../../store/playerStore';
 import { useTasteStore } from '../../store/tasteStore';
 import { useVideoShaderStore } from '../../store/videoShaderStore';
 import { KodaVideoShaderCanvas, buildCssVideoFilter } from './KodaVideoShaderCanvas';
-import { wrapChunkedStreamUrl, prewarmStreamBytes } from '../../api/streamResolver';
+import { wrapChunkedStreamUrl } from '../../api/streamResolver';
 
 /**
  * NativeVideoPlayerEngine
@@ -40,7 +40,8 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
   const [bypassChunkedSwForId, setBypassChunkedSwForId] = useState<string | null>(null);
 
   const {
-    currentVideo,
+    currentVideo: rawCurrentVideo,
+    currentTrack,
     streamVideoUrl,
     streamAudioUrl,
     isPlaying,
@@ -61,6 +62,23 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
     setVideoPlaybackError,
     retryVideoStream
   } = usePlayerStore();
+
+  const currentVideo = React.useMemo(() => {
+    if (rawCurrentVideo) return rawCurrentVideo;
+    if (currentTrack && playbackMode === 'video') {
+      return {
+        id: currentTrack.id,
+        title: currentTrack.title,
+        channelName: currentTrack.artist,
+        channelId: currentTrack.artistId,
+        duration: currentTrack.duration || 180,
+        durationFormatted: '',
+        thumbnailUrl: currentTrack.highResThumbnailUrl || currentTrack.thumbnailUrl,
+        viewCount: ''
+      };
+    }
+    return null;
+  }, [rawCurrentVideo, currentTrack, playbackMode]);
 
   const shaderSettings = useVideoShaderStore();
 
@@ -177,12 +195,6 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
         audio.load();
       }
       return;
-    }
-
-    // Warm the initial bounded byte range (768KB / 1.5MB) in background
-    prewarmStreamBytes(streamVideoUrl);
-    if (isSeparateAudio && streamAudioUrl) {
-      prewarmStreamBytes(streamAudioUrl);
     }
 
     const storeState = usePlayerStore.getState();
@@ -371,6 +383,43 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
     if (audio) audio.loop = isLooping;
   }, [isLooping]);
 
+  // Wire OS / Hardware Media Session API for Video Mode
+  useEffect(() => {
+    if (playbackMode !== 'video' || !currentVideo || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentVideo.title || 'OurTube Video',
+        artist: currentVideo.channelName || 'YouTube',
+        artwork: currentVideo.thumbnailUrl
+          ? [{ src: currentVideo.thumbnailUrl, sizes: '512x512', type: 'image/jpeg' }]
+          : []
+      });
+      navigator.mediaSession.setActionHandler('play', () => {
+        usePlayerStore.setState({ isPlaying: true });
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        usePlayerStore.setState({ isPlaying: false });
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const offset = details.seekOffset || 10;
+        const v = videoRef.current;
+        if (v) usePlayerStore.getState().seek(Math.max(0, v.currentTime - offset));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const offset = details.seekOffset || 10;
+        const v = videoRef.current;
+        if (v) usePlayerStore.getState().seek(v.currentTime + offset);
+      });
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (typeof details.seekTime === 'number') {
+          usePlayerStore.getState().seek(details.seekTime);
+        }
+      });
+    } catch {
+      // Ignore unsupported MediaSession handlers
+    }
+  }, [playbackMode, currentVideo?.id, currentVideo?.title, currentVideo?.channelName, currentVideo?.thumbnailUrl]);
+
   // PLL Soft Clock Synchronization for Separate Video + Audio Streams (Zero Seek-Storms)
   useEffect(() => {
     if (!isSeparateAudio || !isPlaying || playbackMode !== 'video') return;
@@ -455,13 +504,13 @@ export const NativeVideoPlayerEngine: React.FC<NativeVideoPlayerEngineProps> = (
       );
       retryVideoStream(fallbackQuality).then((recovered) => {
         if (!recovered) {
-          setVideoPlaybackError('Video stream interrupted. Tap Retry or switch to Embedded Player.');
+          setVideoPlaybackError('Video stream interrupted. Tap Retry Stream to reload.');
         }
       });
       return;
     }
 
-    setVideoPlaybackError('Video stream interrupted. Tap Retry or switch to Embedded Player.');
+    setVideoPlaybackError('Video stream interrupted. Tap Retry Stream to reload.');
   }, [
     shouldBypassSw,
     effectiveVideoUrl,

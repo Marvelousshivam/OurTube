@@ -37,10 +37,35 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   });
 }
 
+const VALID_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+export function isValidYouTubeVideoId(videoId?: string | null): boolean {
+  return Boolean(videoId && VALID_VIDEO_ID_RE.test(videoId.trim()));
+}
+
+let probeVideoEl: HTMLVideoElement | null = null;
+let probeAudioEl: HTMLAudioElement | null = null;
+
+function isMediaMimeSupported(mimeType?: string | null, kind: 'video' | 'audio' = 'video'): boolean {
+  if (!mimeType) return false;
+  if (typeof document === 'undefined') return true;
+  try {
+    if (kind === 'video') {
+      if (!probeVideoEl) probeVideoEl = document.createElement('video');
+      return probeVideoEl.canPlayType(mimeType) !== '';
+    } else {
+      if (!probeAudioEl) probeAudioEl = document.createElement('audio');
+      return probeAudioEl.canPlayType(mimeType) !== '';
+    }
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Wraps a progressive googlevideo.com stream URL into our local Service Worker
  * ChunkedStreamDataSource endpoint (/koda-stream-sw.js) so open-ended <video> Range
- * requests are converted into bounded 2MB/8MB chunk requests (bypassing YouTube's 1.0x bitrate throttle).
+ * requests are converted into bounded backpressure-aware chunk requests.
  */
 export function wrapChunkedStreamUrl(rawUrl?: string | null): string | null {
   if (!rawUrl) return null;
@@ -61,8 +86,8 @@ export function wrapChunkedStreamUrl(rawUrl?: string | null): string | null {
 const prewarmedUrls = new Set<string>();
 
 /**
- * Warms the initial 1 MB of a googlevideo stream using a bounded range parameter (&range=0-1048575)
- * into both the browser HTTP cache and the Koda Service Worker startup RAM cache.
+ * Warms the initial 1.5 MB of a googlevideo stream into the Koda Service Worker startup RAM cache
+ * (or browser HTTP cache if the Service Worker is not yet active).
  */
 export function prewarmStreamBytes(rawUrl?: string | null): void {
   if (!rawUrl || typeof window === 'undefined') return;
@@ -79,11 +104,12 @@ export function prewarmStreamBytes(rawUrl?: string | null): void {
         type: 'KODA_PREWARM_STREAM',
         url: rawUrl
       });
+      return;
     }
     const parsed = new URL(rawUrl);
     if (parsed.hostname.endsWith('.googlevideo.com')) {
       const clen = parseInt(parsed.searchParams.get('clen') || '0', 10);
-      const endByte = clen > 0 ? Math.min(clen - 1, 786431) : 786431; // 768 KB instant keyframe slice
+      const endByte = clen > 0 ? Math.min(clen - 1, 524287) : 524287;
       parsed.searchParams.set('range', `0-${endByte}`);
       window.fetch(parsed.toString(), { method: 'GET', credentials: 'omit' }).catch(() => {});
     }
@@ -94,6 +120,94 @@ export function prewarmStreamBytes(rawUrl?: string | null): void {
 
 const YOUTUBE_HOSTS = new Set(['music.youtube.com', 'www.youtube.com', 'youtube.com']);
 const SAFELISTED = new Set(['accept', 'accept-language', 'content-language']);
+
+/**
+ * InnerTube clients that accept cookie (SAPISIDHASH) authentication.
+ * iOS/visionOS/Android clients do NOT accept browser cookies, so they stay anonymous.
+ */
+const COOKIE_AUTH_PLAYER_CLIENTS: Record<string, string> = {
+  TVHTML5: '7',
+  WEB: '1',
+  MWEB: '2'
+};
+
+/** When YouTube answers anonymous requests with "Sign in to confirm you're not a bot",
+ * stop sending anonymous /player requests for a while instead of hammering it. */
+const ANON_BLOCK_COOLDOWN_MS = 10 * 60 * 1000;
+let anonymousBlockedUntil = 0;
+
+function markAnonymousBlocked(reason?: string): void {
+  if (Date.now() >= anonymousBlockedUntil) {
+    console.warn(
+      `[OurTube StreamResolver] Anonymous playback refused by YouTube (${reason || 'LOGIN_REQUIRED'}). ` +
+        'Using signed-in session only for the next 10 minutes.'
+    );
+  }
+  anonymousBlockedUntil = Date.now() + ANON_BLOCK_COOLDOWN_MS;
+}
+
+function isAnonymousBlocked(): boolean {
+  return Date.now() < anonymousBlockedUntil;
+}
+
+function hasSignedInSession(): boolean {
+  return bridgeClient.getIsAvailable() && Boolean(bridgeClient.getAuthState()?.isAuthenticated);
+}
+
+/**
+ * Read-Only / Anonymous Playback by default:
+ * Only attach the user's signed-in session to /player requests when anonymous resolution fails
+ * (e.g. age-restricted video or LOGIN_REQUIRED challenge), protecting the user's Google account
+ * from routine playback/prefetch traffic.
+ */
+let allowAuthenticatedPlayerFallback = false;
+
+/**
+ * Sends a /player request through the companion extension using the user's own signed-in
+ * YouTube session. Returns null when not applicable so the caller falls back to anonymous.
+ */
+async function tryAuthenticatedPlayerFetch(_url: URL, body: string): Promise<Response | null> {
+  if (!hasSignedInSession()) return null;
+  if (!allowAuthenticatedPlayerFallback && !isAnonymousBlocked()) return null;
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+
+  const clientName: string | undefined = parsed?.context?.client?.clientName;
+  const clientId = clientName ? COOKIE_AUTH_PLAYER_CLIENTS[clientName] : undefined;
+  if (!clientId) return null;
+
+  // Include contentCheckOk & racyCheckOk so age-restricted videos play when signed in
+  parsed.contentCheckOk = true;
+  parsed.racyCheckOk = true;
+
+  try {
+    const authUser = bridgeClient.getAuthState()?.selectedChannel?.authUser || '0';
+    const result = await bridgeClient.fetchInnertube({
+      url: `https://www.youtube.com/youtubei/v1/player?prettyPrint=false`,
+      method: 'POST',
+      headers: {
+        'X-Goog-AuthUser': authUser,
+        'X-YouTube-Client-Name': clientId,
+        'X-YouTube-Client-Version': String(parsed.context.client.clientVersion || '')
+      },
+      body: parsed
+    });
+    if (!result) return null;
+    const payload = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+    return new Response(payload, {
+      status: result.status || 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (err) {
+    console.warn('[OurTube StreamResolver] Signed-in /player request via extension failed:', err);
+    return null;
+  }
+}
 
 /**
  * youtubei answers CORS preflights with 400, so InnerTube calls must be "simple" requests:
@@ -119,6 +233,13 @@ async function simpleRequestFetch(input: RequestInfo | URL, init?: RequestInit):
   if (body === undefined && request && method !== 'GET' && method !== 'HEAD') {
     body = await request.text();
   }
+
+  // Signed-in /player requests go through the companion extension only when explicitly enabled
+  if (url.pathname === '/youtubei/v1/player' && typeof body === 'string') {
+    const authenticated = await tryAuthenticatedPlayerFetch(url, body);
+    if (authenticated) return authenticated;
+  }
+
   if (body != null) headers.set('Content-Type', 'text/plain;charset=UTF-8');
 
   return fetch(url, {
@@ -183,11 +304,29 @@ function getCacheKey(options: StreamOptions): string {
   return `${options.videoId}:${options.quality || 'auto'}:${options.mode || 'music'}:${options.audioTrackId || 'orig'}`;
 }
 
+function extractUrlExpiryMs(rawUrl?: string | null): number | null {
+  if (!rawUrl) return null;
+  try {
+    const parsed = new URL(rawUrl);
+    const expireSec = parseInt(parsed.searchParams.get('expire') || '0', 10);
+    if (Number.isFinite(expireSec) && expireSec > 0) {
+      // Refresh at least 5 minutes before actual googlevideo.com URL expiration
+      return expireSec * 1000 - 5 * 60 * 1000;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export function getCachedStream(options: StreamOptions): StreamResolutionResponse | null {
   const key = getCacheKey(options);
   const entry = streamResolutionCache.get(key);
   if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
+  const now = Date.now();
+  const urlExpiry =
+    extractUrlExpiryMs(entry.response.videoUrl) ?? extractUrlExpiryMs(entry.response.audioUrl);
+  if (now > entry.expiresAt || (urlExpiry !== null && now >= urlExpiry)) {
     streamResolutionCache.delete(key);
     return null;
   }
@@ -197,10 +336,16 @@ export function getCachedStream(options: StreamOptions): StreamResolutionRespons
 export function setCachedStream(options: StreamOptions, response: StreamResolutionResponse): void {
   if (!response?.audioUrl) return;
   const key = getCacheKey(options);
-  const ttlMs = (response.expiresInSeconds ? response.expiresInSeconds - 120 : 21600) * 1000;
+  const fallbackTtlMs = (response.expiresInSeconds ? response.expiresInSeconds - 300 : 1800) * 1000;
+  const urlExpiry =
+    extractUrlExpiryMs(response.videoUrl) ?? extractUrlExpiryMs(response.audioUrl);
+  const computedExpiresAt =
+    urlExpiry !== null
+      ? Math.min(urlExpiry, Date.now() + fallbackTtlMs)
+      : Date.now() + Math.max(60000, fallbackTtlMs);
   streamResolutionCache.set(key, {
     response,
-    expiresAt: Date.now() + Math.max(60000, ttlMs)
+    expiresAt: computedExpiresAt
   });
 }
 
@@ -216,6 +361,9 @@ export function invalidateStreamCache(videoId: string): void {
  * Pre-fetches and caches direct audio stream URLs in background so upcoming queue items play seamlessly.
  */
 export async function prefetchStream(options: StreamOptions): Promise<StreamResolutionResponse> {
+  if (!isValidYouTubeVideoId(options?.videoId)) {
+    return { audioUrl: undefined, videoUrl: undefined };
+  }
   const cached = getCachedStream(options);
   if (cached) {
     if (options.mode === 'video') {
@@ -225,6 +373,10 @@ export async function prefetchStream(options: StreamOptions): Promise<StreamReso
       }
     }
     return cached;
+  }
+  // Don't burn requests on speculative prefetches while YouTube is challenging us
+  if (isAnonymousBlocked()) {
+    return { audioUrl: undefined, videoUrl: undefined };
   }
   const resolved = await resolveStream(options);
   if (options.mode === 'video' && resolved) {
@@ -246,7 +398,7 @@ export function prefetchVideoStream(
   videoId: string,
   quality: 'auto' | '1080p' | '720p' | '480p' | '360p' = 'auto'
 ): void {
-  if (!videoId || videoId.length < 5) return;
+  if (!isValidYouTubeVideoId(videoId)) return;
   const key = `${videoId}:${quality}`;
   if (prefetchedVideoIds.has(key)) return;
   prefetchedVideoIds.add(key);
@@ -261,13 +413,15 @@ export function prefetchVideoStream(
  * Resolves a high-quality direct audio/video stream URL.
  * Architecture:
  * 1. In-memory hot cache -> 0ms instant retrieval for queued/pre-buffered tracks
- * 2. Same-origin Vite dev server stream endpoint (/api/resolve-stream) -> 0ms local Node.js resolution
- * 3. In-browser direct VISIONOS Innertube resolution with simpleRequestFetch -> direct googlevideo.com URLs
- * 4. Companion extension bridge fallback -> handles signed-in SAPISID sessions
- * 5. In-browser signature deciphering fallback
+ * 2. Companion extension bridge (anonymous VISIONOS / getInfo)
+ * 3. Same-origin Vite dev server stream endpoint (/api/resolve-stream)
+ * 4. In-browser direct VISIONOS Innertube resolution with simpleRequestFetch
+ * 5. In-browser signature deciphering fallback (anonymous first, then signed-in fallback if required)
  */
 export async function resolveStream(options: StreamOptions): Promise<StreamResolutionResponse> {
-  const { videoId, quality = 'auto', mode = 'music' } = options;
+  if (!isValidYouTubeVideoId(options?.videoId)) {
+    return { audioUrl: undefined, videoUrl: undefined };
+  }
   const cacheKey = getCacheKey(options);
 
   // 0. Check hot memory cache
@@ -303,8 +457,11 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
   const mappedAudioQuality: 'high' | 'normal' | 'low' =
     qualityPref === 'saver' ? 'low' : qualityPref === 'normal' ? 'normal' : 'high';
 
-  // 1. Companion extension bridge (direct host permissions in background, 0 CORS, supports signed sessions)
-  if (bridgeClient.getIsAvailable()) {
+  // Anonymous paths (1-3) are skipped while YouTube is refusing anonymous requests.
+  const anonymousAllowed = !isAnonymousBlocked();
+
+  // 1. Companion extension bridge (direct host permissions in background, 0 CORS)
+  if (anonymousAllowed && bridgeClient.getIsAvailable()) {
     try {
       const bridgeRes = await bridgeClient.resolveStream({
         videoId,
@@ -324,133 +481,212 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
   }
 
   // 2. Same-Origin Vite stream resolver (when running under local Vite dev server)
-  try {
-    const res = await window.fetch(
-      `/api/resolve-stream?videoId=${encodeURIComponent(videoId)}&quality=${encodeURIComponent(quality)}&mode=${encodeURIComponent(mode)}&audioTrackId=${encodeURIComponent(audioTrackId || '')}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.audioUrl && (mode !== 'video' || data?.videoUrl)) {
-        return {
-          audioUrl: data.audioUrl,
-          videoUrl: data.videoUrl,
-          audioBitrate: data.audioBitrate,
-          videoQuality: data.videoQuality || quality,
-          expiresInSeconds: data.expiresInSeconds || 21600,
-          format: data.format,
-          captionTracks: data.captionTracks
-        };
+  if (anonymousAllowed) {
+    try {
+      const res = await window.fetch(
+        `/api/resolve-stream?videoId=${encodeURIComponent(videoId)}&quality=${encodeURIComponent(quality)}&mode=${encodeURIComponent(mode)}&audioTrackId=${encodeURIComponent(audioTrackId || '')}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.audioUrl && (mode !== 'video' || data?.videoUrl)) {
+          return {
+            audioUrl: data.audioUrl,
+            videoUrl: data.videoUrl,
+            audioBitrate: data.audioBitrate,
+            videoQuality: data.videoQuality || quality,
+            expiresInSeconds: data.expiresInSeconds || 21600,
+            format: data.format,
+            captionTracks: data.captionTracks
+          };
+        }
       }
+    } catch {
+      // Continue to direct resolution
     }
-  } catch {
-    // Continue to direct resolution
   }
 
   // 3. Direct Innertube VISIONOS resolution (CORS-free simple request, returns direct unencrypted googlevideo.com URLs)
-  try {
-    const yt = await getWebInnertube();
-    const res = await yt.actions.execute('/player', { videoId, client: 'VISIONOS' });
-    const adaptiveFormats: any[] = res.data?.streamingData?.adaptiveFormats || [];
-    const formats: any[] = res.data?.streamingData?.formats || [];
-
-    // Parse audio tracks to guarantee original audio preference & eliminate regional auto-dubs
-    const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptiveFormats, mappedAudioQuality);
-    let selectedTrack: YouTubeAudioTrackOption | undefined;
-    if (audioTrackId) {
-      selectedTrack = audioTracks.find((t) => t.id === audioTrackId);
-    }
-    if (!selectedTrack) {
-      selectedTrack = audioTracks.find((t) => t.isOriginal) || audioTracks[0];
-    }
-
-    const audioFormats = adaptiveFormats
-      .filter((f) => f.mimeType && f.mimeType.startsWith('audio/') && f.url)
-      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-
-    // Choose audio stream respecting Audio Quality setting (High, Normal, Saver)
-    let bestAudio: any;
-    if (selectedTrack?.url) {
-      bestAudio = { url: selectedTrack.url, bitrate: selectedTrack.bitrate, mimeType: 'audio/mp4' };
-    } else if (qualityPref === 'saver') {
-      bestAudio = audioFormats[audioFormats.length - 1] || audioFormats[0];
-    } else if (qualityPref === 'normal') {
-      bestAudio =
-        audioFormats.find((f) => (f.bitrate || 0) <= 160000 && (f.bitrate || 0) >= 96000) ||
-        audioFormats[0];
-    } else {
-      bestAudio =
-        audioFormats.find((f) => f.mimeType.includes('mp4a')) ||
-        audioFormats[0] ||
-        formats.find((f) => f.url);
-    }
-
-    let bestVideo: any = null;
-    let usingMuxedVideo = false;
-    if (mode === 'video') {
-      const muxedFormats = formats
-        .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url)
-        .sort((a, b) => (b.height || 0) - (a.height || 0));
-
-      const videoFormats = adaptiveFormats
-        .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url)
-        .sort((a, b) => {
-          const heightDiff = (b.height || 0) - (a.height || 0);
-          if (heightDiff !== 0) return heightDiff;
-          // Prefer H.264 (avc1) for hardware decode efficiency & zero-stutter compatibility
-          const aAvc = a.mimeType?.includes('avc1') ? 1 : 0;
-          const bAvc = b.mimeType?.includes('avc1') ? 1 : 0;
-          return bAvc - aAvc;
-        });
-
-      const targetHeight =
-        quality && quality !== 'auto' ? parseInt(quality.replace('p', ''), 10) : 1080;
-
-      // Prefer adaptive HD video + separate adaptive audio track so we get 1080p/720p + original soundtrack
-      bestVideo =
-        videoFormats.find((f) => f.height === targetHeight && f.mimeType?.includes('avc1')) ||
-        videoFormats.find((f) => f.height === targetHeight) ||
-        videoFormats.find((f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720) ||
-        videoFormats[0];
-
-      if (!bestVideo && muxedFormats.length > 0) {
-        bestVideo = muxedFormats[0];
-        usingMuxedVideo = true;
+  if (anonymousAllowed) {
+    try {
+      const yt = await getWebInnertube();
+      const res: any = await yt.actions.execute('/player', {
+        videoId,
+        client: 'VISIONOS',
+        contentCheckOk: true,
+        racyCheckOk: true
+      });
+      const playability = res.data?.playabilityStatus;
+      if (playability?.status === 'LOGIN_REQUIRED') {
+        markAnonymousBlocked(playability.reason);
       }
+      const adaptiveFormats: any[] = res.data?.streamingData?.adaptiveFormats || [];
+      const formats: any[] = res.data?.streamingData?.formats || [];
+
+      // Parse audio tracks to guarantee original audio preference & eliminate regional auto-dubs
+      const audioTracks = parseAudioTracksFromAdaptiveFormats(adaptiveFormats, mappedAudioQuality);
+      let selectedTrack: YouTubeAudioTrackOption | undefined;
+      if (audioTrackId) {
+        selectedTrack = audioTracks.find((t) => t.id === audioTrackId);
+      }
+      if (!selectedTrack) {
+        selectedTrack = audioTracks.find((t) => t.isOriginal) || audioTracks[0];
+      }
+
+      const audioFormats = adaptiveFormats
+        .filter((f) => f.mimeType && f.mimeType.startsWith('audio/') && f.url && isMediaMimeSupported(f.mimeType, 'audio'))
+        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+
+      // Choose audio stream respecting Audio Quality setting (High, Normal, Saver)
+      let bestAudio: any;
+      if (selectedTrack?.url) {
+        bestAudio = {
+          url: selectedTrack.url,
+          bitrate: selectedTrack.bitrate,
+          mimeType: selectedTrack.mimeType || 'audio/mp4'
+        };
+      } else if (qualityPref === 'saver') {
+        bestAudio = audioFormats[audioFormats.length - 1] || audioFormats[0];
+      } else if (qualityPref === 'normal') {
+        bestAudio =
+          audioFormats.find((f) => (f.bitrate || 0) <= 160000 && (f.bitrate || 0) >= 96000) ||
+          audioFormats[0];
+      } else {
+        bestAudio =
+          audioFormats.find((f) => f.mimeType.includes('mp4a')) ||
+          audioFormats[0] ||
+          formats.find((f) => f.url);
+      }
+
+      let bestVideo: any = null;
+      let usingMuxedVideo = false;
+      if (mode === 'video') {
+        const muxedFormats = formats
+          .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url && isMediaMimeSupported(f.mimeType, 'video'))
+          .sort((a, b) => (b.height || 0) - (a.height || 0));
+
+        const videoFormats = adaptiveFormats
+          .filter((f) => f.mimeType && f.mimeType.startsWith('video/') && f.url && isMediaMimeSupported(f.mimeType, 'video'))
+          .sort((a, b) => {
+            const heightDiff = (b.height || 0) - (a.height || 0);
+            if (heightDiff !== 0) return heightDiff;
+            // Prefer H.264 (avc1) for hardware decode efficiency & zero-stutter compatibility
+            const aAvc = a.mimeType?.includes('avc1') ? 1 : 0;
+            const bAvc = b.mimeType?.includes('avc1') ? 1 : 0;
+            return bAvc - aAvc;
+          });
+
+        const targetHeight =
+          quality && quality !== 'auto' ? parseInt(quality.replace('p', ''), 10) : 1080;
+
+        // Prefer adaptive HD video + separate adaptive audio track so we get 1080p/720p + original soundtrack
+        bestVideo =
+          videoFormats.find((f) => f.height === targetHeight && f.mimeType?.includes('avc1')) ||
+          videoFormats.find((f) => f.height === targetHeight) ||
+          videoFormats.find(
+            (f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720 && f.mimeType?.includes('avc1')
+          ) ||
+          videoFormats.find((f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720) ||
+          videoFormats.find((f) => f.mimeType?.includes('avc1')) ||
+          videoFormats[0];
+
+        if (!bestVideo && muxedFormats.length > 0) {
+          bestVideo = muxedFormats[0];
+          usingMuxedVideo = true;
+        }
+
+        // Live stream HLS fallback if no static adaptive/muxed formats exist
+        const hlsManifestUrl = res.data?.streamingData?.hlsManifestUrl;
+        if (!bestVideo && hlsManifestUrl) {
+          bestVideo = {
+            url: hlsManifestUrl,
+            height: targetHeight,
+            mimeType: 'application/vnd.apple.mpegurl'
+          };
+          usingMuxedVideo = true;
+        }
+      }
+
+      const captionTracks = parseCaptionTracksFromPlayerResponse(res.data);
+
+      const hasRequiredStreams =
+        mode === 'video' ? Boolean(bestVideo?.url) : Boolean(bestAudio?.url);
+
+      if (hasRequiredStreams && (bestAudio?.url || bestVideo?.url)) {
+        const resolvedAudioUrl = usingMuxedVideo
+          ? bestVideo?.url
+          : selectedTrack?.url || bestAudio?.url || bestVideo?.url;
+        console.log(
+          '[OurTube StreamResolver] Direct VISIONOS resolution successful:',
+          bestVideo?.mimeType || bestAudio?.mimeType
+        );
+        return {
+          audioUrl: resolvedAudioUrl,
+          videoUrl: bestVideo?.url,
+          audioBitrate: selectedTrack?.bitrate || bestAudio?.bitrate,
+          videoQuality: bestVideo ? `${bestVideo.height}p` : undefined,
+          expiresInSeconds: res.data?.streamingData?.expiresInSeconds
+            ? parseInt(res.data.streamingData.expiresInSeconds, 10)
+            : 21600,
+          format: bestVideo?.mimeType || bestAudio?.mimeType,
+          audioTracks,
+          selectedAudioTrackId: selectedTrack?.id,
+          captionTracks
+        };
+      }
+    } catch (directErr) {
+      console.warn('[StreamResolver] Direct VISIONOS resolution error:', directErr);
     }
-
-    const captionTracks = parseCaptionTracksFromPlayerResponse(res.data);
-
-    const hasRequiredStreams = mode === 'video'
-      ? Boolean(bestVideo?.url)
-      : Boolean(bestAudio?.url);
-
-    if (hasRequiredStreams && (bestAudio?.url || bestVideo?.url)) {
-      const resolvedAudioUrl = usingMuxedVideo
-        ? bestVideo?.url
-        : selectedTrack?.url || bestAudio?.url || bestVideo?.url;
-      console.log('[OurTube StreamResolver] Direct VISIONOS resolution successful:', bestVideo?.mimeType || bestAudio?.mimeType);
-      return {
-        audioUrl: resolvedAudioUrl,
-        videoUrl: bestVideo?.url,
-        audioBitrate: selectedTrack?.bitrate || bestAudio?.bitrate,
-        videoQuality: bestVideo ? `${bestVideo.height}p` : undefined,
-        expiresInSeconds: res.data?.streamingData?.expiresInSeconds
-          ? parseInt(res.data.streamingData.expiresInSeconds, 10)
-          : 21600,
-        format: bestVideo?.mimeType || bestAudio?.mimeType,
-        audioTracks,
-        selectedAudioTrackId: selectedTrack?.id,
-        captionTracks
-      };
-    }
-  } catch (directErr) {
-    console.warn('[StreamResolver] Direct VISIONOS resolution error:', directErr);
   }
 
-  // 4. Comprehensive Fallback: getInfo with signature and n-token deciphering
+  // 4. Deciphered fallback: try anonymous WEB decipher first, then opt-in to signed-in
+  //    TV/MWEB decipher only if anonymous resolution could not play the video (e.g. age-restricted).
+  if (anonymousAllowed) {
+    const anonDeciphered = await resolveViaDecipher(videoId, mode, quality, undefined, false);
+    if (anonDeciphered) return anonDeciphered;
+  }
+
+  const signedIn = hasSignedInSession();
+  if (signedIn) {
+    for (const client of ['TV', 'MWEB'] as const) {
+      const resolved = await resolveViaDecipher(videoId, mode, quality, client, true);
+      if (resolved) return resolved;
+    }
+  }
+
+  if (!signedIn && isAnonymousBlocked()) {
+    console.warn(
+      '[OurTube StreamResolver] YouTube is asking to sign in. Connect the companion extension and sign in to YouTube to keep playing.'
+    );
+  }
+
+  return {
+    audioUrl: undefined,
+    videoUrl: undefined
+  };
+}
+
+async function resolveViaDecipher(
+  videoId: string,
+  mode: 'music' | 'video',
+  quality: StreamOptions['quality'],
+  client?: string,
+  useAuthenticatedSession: boolean = false
+): Promise<StreamResolutionResponse | null> {
+  const label = client || 'WEB';
+  const prevAuthFlag = allowAuthenticatedPlayerFallback;
+  allowAuthenticatedPlayerFallback = useAuthenticatedSession;
   try {
     const yt = await getWebInnertube();
-    const info = await yt.getInfo(videoId);
+    const info = await yt.getBasicInfo(videoId, client ? { client: client as any } : undefined);
+
+    const status = info.playability_status?.status;
+    if (status && status !== 'OK') {
+      console.warn(`[StreamResolver] ${label} playability: ${status} - ${info.playability_status?.reason || ''}`);
+      if (status === 'LOGIN_REQUIRED' && !hasSignedInSession()) {
+        markAnonymousBlocked(info.playability_status?.reason);
+      }
+      return null;
+    }
 
     if (mode === 'video') {
       let chosenVideoFormat: any = null;
@@ -476,12 +712,17 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
       const audioUrl = chosenAudioFormat ? await chosenAudioFormat.decipher(yt.session.player) : undefined;
 
       if (videoUrl) {
-        console.log('[OurTube StreamResolver] Deciphered video resolution successful:', chosenVideoFormat?.quality_label);
+        console.log(
+          `[OurTube StreamResolver] ${label} deciphered video resolution successful:`,
+          chosenVideoFormat?.quality_label
+        );
         return {
           audioUrl: audioUrl || videoUrl,
           videoUrl,
           audioBitrate: chosenAudioFormat?.bitrate,
-          videoQuality: chosenVideoFormat?.quality_label || (chosenVideoFormat?.height ? `${chosenVideoFormat.height}p` : undefined),
+          videoQuality:
+            chosenVideoFormat?.quality_label ||
+            (chosenVideoFormat?.height ? `${chosenVideoFormat.height}p` : undefined),
           expiresInSeconds: 21600,
           format: chosenVideoFormat?.mime_type
         };
@@ -492,7 +733,7 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
       const audioUrl = audio ? await audio.decipher(yt.session.player) : undefined;
 
       if (audioUrl) {
-        console.log('[OurTube StreamResolver] Deciphered audio resolution successful');
+        console.log(`[OurTube StreamResolver] ${label} deciphered audio resolution successful`);
         return {
           audioUrl,
           videoUrl: undefined,
@@ -504,11 +745,9 @@ async function _doResolveStream(options: StreamOptions): Promise<StreamResolutio
       }
     }
   } catch (decipherErr) {
-    console.warn('[StreamResolver] Decipher resolution error:', decipherErr);
+    console.warn(`[StreamResolver] ${label} decipher resolution error:`, decipherErr);
+  } finally {
+    allowAuthenticatedPlayerFallback = prevAuthFlag;
   }
-
-  return {
-    audioUrl: undefined,
-    videoUrl: undefined
-  };
+  return null;
 }

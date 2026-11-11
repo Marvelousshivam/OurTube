@@ -25,7 +25,60 @@ async function getInnertube(): Promise<Innertube | null> {
   return innertubeInstance;
 }
 
+const ALLOWED_PROXY_HOSTS = new Set([
+  'music.youtube.com',
+  'www.youtube.com',
+  'youtube.com'
+]);
+
+const ALLOWED_INNERTUBE_PREFIX = '/youtubei/v1/';
+
+function validateProxyUrl(rawUrl: string): {
+  allowed: boolean;
+  isPublicAsset: boolean;
+  parsed?: URL;
+} {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:' || !ALLOWED_PROXY_HOSTS.has(parsed.hostname)) {
+      return { allowed: false, isPublicAsset: false };
+    }
+    if (parsed.pathname.startsWith('/s/player/') || parsed.pathname === '/sw.js_data') {
+      return { allowed: true, isPublicAsset: true, parsed };
+    }
+    if (parsed.pathname.startsWith(ALLOWED_INNERTUBE_PREFIX)) {
+      return { allowed: true, isPublicAsset: false, parsed };
+    }
+    return { allowed: false, isPublicAsset: false };
+  } catch {
+    return { allowed: false, isPublicAsset: false };
+  }
+}
+
 export async function handleProxyFetch(payload: FetchRequestPayload): Promise<FetchResponsePayload> {
+  const validation = validateProxyUrl(payload?.url || '');
+  if (!validation.allowed || !validation.parsed) {
+    throw new Error(`Disallowed proxy target URL: ${payload?.url || 'empty'}`);
+  }
+
+  // Public assets (like player decipher scripts) should be fetched anonymously without user cookies or SAPISIDHASH
+  if (validation.isPublicAsset && validation.parsed.pathname.startsWith('/s/player/')) {
+    const pubRes = await fetch(validation.parsed.toString(), {
+      method: 'GET',
+      credentials: 'omit'
+    });
+    const pubHeaders: Record<string, string> = {};
+    pubRes.headers.forEach((v, k) => {
+      pubHeaders[k] = v;
+    });
+    return {
+      status: pubRes.status,
+      statusText: pubRes.statusText,
+      headers: pubHeaders,
+      data: await pubRes.text()
+    };
+  }
+
   // Ensure background extension request rules are installed
   await installExtensionFetchRule();
 
@@ -199,7 +252,13 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
 
     // Fallback best audio if audioTracks was empty
     let bestAudio =
-      (selectedTrack?.url ? { url: selectedTrack.url, bitrate: selectedTrack.bitrate, mimeType: 'audio/mp4' } : null) ||
+      (selectedTrack?.url
+        ? {
+            url: selectedTrack.url,
+            bitrate: selectedTrack.bitrate,
+            mimeType: selectedTrack.mimeType || 'audio/mp4'
+          }
+        : null) ||
       preferredAudioFormat ||
       formats.find((f) => f.url);
 
@@ -230,7 +289,11 @@ export async function handleStreamResolution(payload: StreamResolutionRequest): 
       bestVideo =
         videoFormats.find((f) => f.height === targetHeight && f.mimeType?.includes('avc1')) ||
         videoFormats.find((f) => f.height === targetHeight) ||
+        videoFormats.find(
+          (f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720 && f.mimeType?.includes('avc1')
+        ) ||
         videoFormats.find((f) => (f.height || 0) <= targetHeight && (f.height || 0) >= 720) ||
+        videoFormats.find((f) => f.mimeType?.includes('avc1')) ||
         videoFormats[0];
 
       // Only fall back to muxed format if adaptive video formats are unavailable
@@ -371,15 +434,22 @@ export async function handleScrapePage(targetUrl: string = 'https://www.youtube.
   const secret = await getSigningSecret();
   const targetOrigin = 'https://www.youtube.com';
 
-  let fetchUrl = targetUrl;
+  let fetchUrl = 'https://www.youtube.com/';
   try {
     const parsed = new URL(targetUrl);
+    if (
+      parsed.protocol !== 'https:' ||
+      (parsed.hostname !== 'www.youtube.com' && parsed.hostname !== 'music.youtube.com')
+    ) {
+      throw new Error(`Disallowed scrape host: ${parsed.hostname}`);
+    }
     if (!parsed.searchParams.has('authuser')) {
       parsed.searchParams.set('authuser', identity.authUser);
     }
     fetchUrl = parsed.toString();
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn('[OurTube Companion] Blocked invalid scrape URL:', targetUrl, err);
+    return null;
   }
 
   const headers: Record<string, string> = {

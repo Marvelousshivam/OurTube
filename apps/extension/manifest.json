@@ -18,16 +18,23 @@
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*",
-    "https://*.vercel.app/*",
     "https://ourtube-zeta.vercel.app/*",
     "https://music.youtube.com/*",
     "https://www.youtube.com/*",
     "https://*.youtube.com/*",
     "https://*.googlevideo.com/*",
-    "https://accounts.google.com/*",
-    "https://*.google.com/*",
     "https://discord.com/*",
-    "https://*.discord.com/*"
+    "https://*.discord.com/*",
+    "https://mobileservice.kugou.com/*",
+    "https://lyrics.kugou.com/*",
+    "https://apic.musixmatch.com/*",
+    "https://www.musixmatch.com/*",
+    "https://genius.com/*",
+    "https://music.apple.com/*",
+    "https://amp-api.music.apple.com/*",
+    "https://api.paxsenix.org/*",
+    "https://lyrics-api.boidu.dev/*",
+    "https://unison.boidu.dev/*"
   ],
   "background": {
     "service_worker": "serviceWorker.js",
@@ -38,7 +45,6 @@
       "matches": [
         "http://localhost/*",
         "http://127.0.0.1/*",
-        "https://*.vercel.app/*",
         "https://ourtube-zeta.vercel.app/*"
       ],
       "js": ["bridge.js"],
@@ -49,9 +55,11 @@
     "matches": [
       "http://localhost/*",
       "http://127.0.0.1/*",
-      "https://*.vercel.app/*",
       "https://ourtube-zeta.vercel.app/*"
     ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none';"
   },
   "action": {
     "default_title": "OurTube Companion",

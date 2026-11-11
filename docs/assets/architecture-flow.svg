@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 370" width="100%">
+  <defs>
+    <linearGradient id="arch-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#161116"/>
+      <stop offset="100%" stop-color="#1E1815"/>
+    </linearGradient>
+    <style>
+      .font-sans { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect x="2" y="2" width="1196" height="366" rx="28" fill="url(#arch-bg)" stroke="#382B33" stroke-width="1.5"/>
+
+  <!-- Header -->
+  <text x="40" y="40" class="font-mono" font-size="11" font-weight="700" fill="#E9C16C" letter-spacing="1.5">SYSTEM TOPOLOGY  •  ZERO-API-KEY DUAL-ENGINE BRIDGE</text>
+
+  <!-- Animated Connection Curves -->
+  <!-- Web Client <-> Extension Bridge -->
+  <path id="link-bridge" d="M 380 140 C 435 140, 445 140, 500 140" fill="none" stroke="#E9C16C" stroke-width="2.2" stroke-dasharray="6 4"/>
+  <circle r="4.5" fill="#FFE082">
+    <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 140 C 435 140, 445 140, 500 140"/>
+  </circle>
+
+  <!-- Web Client <-> IndexedDB Taste Store -->
+  <path d="M 210 215 L 210 255" fill="none" stroke="#FFB1C8" stroke-width="2.2" stroke-dasharray="5 4"/>
+  <circle r="4" fill="#FFB1C8">
+    <animateMotion dur="1.8s" repeatCount="indefinite" path="M 210 215 L 210 255"/>
+  </circle>
+
+  <!-- Extension Bridge <-> YouTube InnerTube -->
+  <path d="M 790 115 C 835 115, 845 92, 890 92" fill="none" stroke="#8CE99A" stroke-width="2.2" stroke-dasharray="6 4"/>
+  <circle r="4.5" fill="#8CE99A">
+    <animateMotion dur="2s" repeatCount="indefinite" path="M 790 115 C 835 115, 845 92, 890 92"/>
+  </circle>
+
+  <!-- Extension Bridge <-> 15 Lyrics Cascade -->
+  <path d="M 790 155 C 835 155, 845 190, 890 190" fill="none" stroke="#D0BCFF" stroke-width="2.2" stroke-dasharray="6 4"/>
+  <circle r="4.5" fill="#D0BCFF">
+    <animateMotion dur="2.5s" repeatCount="indefinite" path="M 790 155 C 835 155, 845 190, 890 190"/>
+  </circle>
+
+  <!-- Extension Bridge <-> SponsorBlock & Discord -->
+  <path d="M 790 190 C 835 190, 845 288, 890 288" fill="none" stroke="#A8C7FA" stroke-width="2.2" stroke-dasharray="6 4"/>
+  <circle r="4.5" fill="#A8C7FA">
+    <animateMotion dur="2.8s" repeatCount="indefinite" path="M 790 190 C 835 190, 845 288, 890 288"/>
+  </circle>
+
+  <!-- NODE 1: OurTube Web Client -->
+  <g transform="translate(40, 68)">
+    <rect x="0" y="0" width="340" height="146" rx="22" fill="#251A22" stroke="#5E384C" stroke-width="1.5"/>
+    <rect x="18" y="18" width="112" height="22" rx="11" fill="#462234"/>
+    <text x="30" y="33" class="font-mono" font-size="10" font-weight="700" fill="#FFB1C8">WEB APPLICATION</text>
+    <text x="18" y="64" class="font-sans" font-size="18" font-weight="800" fill="#F9EEF2">OurTube Client (React 19)</text>
+    <text x="18" y="88" class="font-sans" font-size="12.5" fill="#C9B8C0">• 8 M3 Expressive Player Personas</text>
+    <text x="18" y="108" class="font-sans" font-size="12.5" fill="#C9B8C0">• 16 Real-Time WebGL2 Video Shaders</text>
+    <text x="18" y="128" class="font-sans" font-size="12.5" fill="#C9B8C0">• HCT Tonal Extraction &amp; 3-Tier Queue</text>
+  </g>
+
+  <!-- NODE 2: On-Device IndexedDB Store -->
+  <g transform="translate(40, 255)">
+    <rect x="0" y="0" width="340" height="84" rx="20" fill="#1F2925" stroke="#39544A" stroke-width="1.5"/>
+    <text x="20" y="32" class="font-sans" font-size="15" font-weight="800" fill="#96F2D7">On-Device Taste Store (IndexedDB)</text>
+    <text x="20" y="54" class="font-sans" font-size="12" fill="#B5CEC6">History, play counts, custom GLSL &amp; queue state.</text>
+    <text x="20" y="71" class="font-mono" font-size="10.5" fill="#6CA893">ZERO CLOUD TELEMETRY • 100% LOCAL</text>
+  </g>
+
+  <!-- Protocol Label -->
+  <rect x="396" y="102" width="90" height="24" rx="8" fill="#2E251B" stroke="#594730"/>
+  <text x="441" y="118" text-anchor="middle" class="font-mono" font-size="9.5" font-weight="700" fill="#E9C16C">postMessage</text>
+
+  <!-- NODE 3: Chromium MV3 Companion Extension -->
+  <g transform="translate(500, 68)">
+    <rect x="0" y="0" width="290" height="270" rx="22" fill="#28211B" stroke="#634E34" stroke-width="1.5"/>
+    <rect x="18" y="18" width="136" height="22" rx="11" fill="#3D301E"/>
+    <text x="30" y="33" class="font-mono" font-size="10" font-weight="700" fill="#E9C16C">MV3 SERVICE WORKER</text>
+    <text x="18" y="64" class="font-sans" font-size="18" font-weight="800" fill="#F7EFE4">Companion Bridge</text>
+    <text x="18" y="92" class="font-sans" font-size="12.5" fill="#D4C5B4">• Mint SAPISIDHASH Auth Headers</text>
+    <text x="18" y="114" class="font-sans" font-size="12.5" fill="#D4C5B4">• Multi-Account &amp; Brand Switcher</text>
+    <text x="18" y="136" class="font-sans" font-size="12.5" fill="#D4C5B4">• DeclarativeNetRequest CORS Strip</text>
+    <text x="18" y="158" class="font-sans" font-size="12.5" fill="#D4C5B4">• Native Discord Gateway WebSocket</text>
+    <rect x="18" y="184" width="254" height="66" rx="14" fill="#1E1813" stroke="#3D3124"/>
+    <text x="32" y="208" class="font-mono" font-size="10.5" font-weight="700" fill="#8CE99A">SECURITY BOUNDARY</text>
+    <text x="32" y="226" class="font-sans" font-size="11.5" fill="#B8AA9B">Session cookies never leave your</text>
+    <text x="32" y="241" class="font-sans" font-size="11.5" fill="#B8AA9B">local Chromium browser process.</text>
+  </g>
+
+  <!-- NODE 4A: YouTube InnerTube -->
+  <g transform="translate(890, 48)">
+    <rect x="0" y="0" width="270" height="86" rx="18" fill="#1F2B23" stroke="#395743" stroke-width="1.5"/>
+    <text x="18" y="30" class="font-sans" font-size="14.5" font-weight="800" fill="#8CE99A">YouTube InnerTube API</text>
+    <text x="18" y="50" class="font-sans" font-size="12" fill="#B8D4C0">256kbps AAC / Opus Audio &amp; 4K Video</text>
+    <text x="18" y="68" class="font-mono" font-size="10" fill="#74A884">LIBRARY • MIXES • SUBSCRIPTIONS</text>
+  </g>
+
+  <!-- NODE 4B: 15-Source Lyrics Cascade -->
+  <g transform="translate(890, 148)">
+    <rect x="0" y="0" width="270" height="86" rx="18" fill="#261F33" stroke="#4B3B66" stroke-width="1.5"/>
+    <text x="18" y="30" class="font-sans" font-size="14.5" font-weight="800" fill="#D0BCFF">15-Provider Lyrics Cascade</text>
+    <text x="18" y="50" class="font-sans" font-size="12" fill="#C9BFE0">Syllable TTML, Enhanced LRC &amp; Duets</text>
+    <text x="18" y="68" class="font-mono" font-size="10" fill="#9E8BC2">LRC.RED • APPLE • MUSIXMATCH • LRC</text>
+  </g>
+
+  <!-- NODE 4C: SponsorBlock + RYD + Discord -->
+  <g transform="translate(890, 248)">
+    <rect x="0" y="0" width="270" height="90" rx="18" fill="#1E2633" stroke="#374966" stroke-width="1.5"/>
+    <text x="18" y="30" class="font-sans" font-size="14.5" font-weight="800" fill="#A8C7FA">SponsorBlock, RYD &amp; Discord</text>
+    <text x="18" y="50" class="font-sans" font-size="12" fill="#B8C7DE">4-Hex SHA-256 Prefix Skip &amp; Dislikes</text>
+    <text x="18" y="68" class="font-mono" font-size="10" fill="#7D9BC7">RICH PRESENCE • AUTO-SKIP SEGMENTS</text>
+  </g>
+</svg>

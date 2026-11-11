@@ -5,6 +5,7 @@ export type BridgeMessageType =
   | 'KODA_BRIDGE_GET_ACCOUNTS'
   | 'KODA_BRIDGE_SELECT_ACCOUNT'
   | 'KODA_BRIDGE_FETCH'
+  | 'KODA_BRIDGE_LYRICS_FETCH'
   | 'KODA_BRIDGE_STREAM_URL'
   | 'KODA_BRIDGE_COOKIE_SYNC'
   | 'KODA_BRIDGE_SCRAPE_HOME'
@@ -50,12 +51,9 @@ export interface YtAccount {
 
 export interface AuthState {
   isAuthenticated: boolean;
-  sapisid?: string;
-  sapisidHash?: string;
   accounts: YtAccount[];
   selectedChannelId?: string | null;
   selectedChannel?: YtChannel | null;
-  cookies?: Record<string, string>;
 }
 
 export interface FetchRequestPayload {
@@ -72,6 +70,18 @@ export interface FetchResponsePayload {
   data: any;
 }
 
+export interface LyricsFetchRequestPayload {
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export interface LyricsFetchResponsePayload {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+  bodyEncoding: 'utf8' | 'base64';
+}
+
 export interface YouTubeAudioTrackOption {
   id: string; // e.g. "en.4", "hi.2"
   displayName: string; // e.g. "English original", "Hindi (auto-dubbed)"
@@ -80,6 +90,7 @@ export interface YouTubeAudioTrackOption {
   isAutoDubbed: boolean;
   url?: string;
   bitrate?: number;
+  mimeType?: string;
 }
 
 export interface YouTubeCaptionTrackOption {
@@ -151,9 +162,10 @@ export function decodeYouTubeXtags(xtags?: string | null): Record<string, string
   try {
     let b64 = xtags.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4 !== 0) b64 += '=';
+    const nodeBuffer = (globalThis as { Buffer?: { from(s: string, enc: string): { toString(enc: string): string } } }).Buffer;
     const binary = typeof atob === 'function'
       ? atob(b64)
-      : (typeof Buffer !== 'undefined' ? Buffer.from(b64, 'base64').toString('binary') : '');
+      : (nodeBuffer ? nodeBuffer.from(b64, 'base64').toString('binary') : '');
     if (!binary) return {};
 
     const bytes = new Uint8Array(binary.length);
@@ -310,7 +322,8 @@ export function parseAudioTracksFromAdaptiveFormats(
       isOriginal,
       isAutoDubbed,
       url: best.url,
-      bitrate: best.bitrate
+      bitrate: best.bitrate,
+      mimeType: best.mimeType || best.mime_type || 'audio/mp4'
     });
   }
 

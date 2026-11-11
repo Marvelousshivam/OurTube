@@ -8,8 +8,8 @@
  * CDN line speed (5-22 MB/s), filling 30-120s of read-ahead runway in seconds.
  */
 
-const FIRST_CHUNK_BYTES = 2 * 1024 * 1024; // 2 MB fast startup chunk
-const NEXT_CHUNK_BYTES = 8 * 1024 * 1024;  // 8 MB steady-state chunk (matches temp_koda)
+const FIRST_CHUNK_BYTES = 1536 * 1024;     // 1.5 MB fast startup chunk
+const NEXT_CHUNK_BYTES = 2 * 1024 * 1024;  // 2 MB steady-state backpressure-aware chunk
 const PREWARM_BYTES = 1536 * 1024;         // 1.5 MB pre-warmed startup slice
 
 // In-memory LRU cache of pre-warmed startup chunks (bytes 0 .. stripEnd)
@@ -52,10 +52,19 @@ function getStreamKey(rawUrl) {
   }
 }
 
-function shouldChunkUrl(rawUrl) {
+function isAllowedStreamHost(rawUrl) {
   try {
     const u = new URL(rawUrl);
-    if (!u.hostname.endsWith('.googlevideo.com')) return false;
+    return u.protocol === 'https:' && u.hostname.endsWith('.googlevideo.com');
+  } catch {
+    return false;
+  }
+}
+
+function shouldChunkUrl(rawUrl) {
+  try {
+    if (!isAllowedStreamHost(rawUrl)) return false;
+    const u = new URL(rawUrl);
     if (u.hostname.startsWith('manifest.')) return false;
     if (u.pathname.includes('manifest') || u.pathname.endsWith('.m3u8')) return false;
     const clen = parseInt(u.searchParams.get('clen') || '0', 10);
@@ -120,8 +129,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (!isAllowedStreamHost(rawUrl)) {
+    event.respondWith(new Response('Forbidden stream host', { status: 403 }));
+    return;
+  }
+
   if (!shouldChunkUrl(rawUrl)) {
-    event.respondWith(Response.redirect(rawUrl, 302));
+    event.respondWith(fetch(rawUrl, { credentials: 'omit' }));
     return;
   }
 
@@ -152,8 +166,7 @@ async function handleChunkedStreamRequest(request, rawUrl) {
     return new Response(null, {
       status: 416,
       headers: {
-        'Content-Range': `bytes */${totalLength}`,
-        'Access-Control-Allow-Origin': '*'
+        'Content-Range': `bytes */${totalLength}`
       }
     });
   }
@@ -162,14 +175,13 @@ async function handleChunkedStreamRequest(request, rawUrl) {
   const streamKey = getStreamKey(rawUrl);
   let cancelled = false;
   let activeAbortController = null;
+  let position = startByte;
+  let isFirstChunk = true;
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let position = startByte;
-      let isFirstChunk = true;
-
-      try {
-        // 1. Serve from RAM startup cache if starting inside pre-warmed window
+  const stream = new ReadableStream(
+    {
+      start(controller) {
+        // 1. Immediately serve from RAM startup cache if starting inside pre-warmed window
         const cachedStartup = getStartupCache(streamKey);
         if (cachedStartup && position < cachedStartup.byteLength) {
           const sliceEnd = Math.min(cachedStartup.byteLength, endByte + 1);
@@ -179,93 +191,80 @@ async function handleChunkedStreamRequest(request, rawUrl) {
             position += slice.byteLength;
           }
         }
+        if (position > endByte && !cancelled) {
+          controller.close();
+        }
+      },
+      async pull(controller) {
+        if (cancelled) return;
+        if (position > endByte) {
+          controller.close();
+          return;
+        }
 
-        // 2. Roll over bounded range requests until endByte or cancellation
-        while (position <= endByte && !cancelled) {
+        try {
           const chunkSize = isFirstChunk ? FIRST_CHUNK_BYTES : NEXT_CHUNK_BYTES;
           isFirstChunk = false;
           const chunkTargetEnd = Math.min(endByte, position + chunkSize - 1);
           const chunkUrl = buildRangeUrl(rawUrl, position, chunkTargetEnd);
 
           activeAbortController = new AbortController();
-          const res = await fetch(chunkUrl, {
+          let res = await fetch(chunkUrl, {
             method: 'GET',
             credentials: 'omit',
             signal: activeAbortController.signal
           });
 
+          // Single transient retry with brief backoff for 5xx/network hiccups (never tight-loop on 403/416)
+          if (!res.ok && res.status >= 500 && !cancelled) {
+            await new Promise((r) => setTimeout(r, 300));
+            activeAbortController = new AbortController();
+            res = await fetch(chunkUrl, {
+              method: 'GET',
+              credentials: 'omit',
+              signal: activeAbortController.signal
+            });
+          }
+
           if (!res.ok && res.status !== 206) {
             throw new Error(`Chunk HTTP ${res.status}`);
           }
 
-          if (!res.body) {
-            const buf = new Uint8Array(await res.arrayBuffer());
-            if (buf.byteLength === 0) break;
-            if (position === 0 && !getStartupCache(streamKey)) {
-              putStartupCache(streamKey, buf.slice(0, Math.min(buf.byteLength, PREWARM_BYTES)));
-            }
-            controller.enqueue(buf);
-            position += buf.byteLength;
-            continue;
+          const buf = new Uint8Array(await res.arrayBuffer());
+          if (buf.byteLength === 0) {
+            controller.close();
+            return;
           }
 
-          const reader = res.body.getReader();
-          let chunkBytesRead = 0;
-          const collectForStartup = position === 0 && !getStartupCache(streamKey);
-          const startupPieces = [];
-          let startupBytesCollected = 0;
-
-          while (!cancelled) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (value && value.byteLength > 0) {
-              if (collectForStartup && startupBytesCollected < PREWARM_BYTES) {
-                const needed = PREWARM_BYTES - startupBytesCollected;
-                startupPieces.push(value.slice(0, Math.min(value.byteLength, needed)));
-                startupBytesCollected += Math.min(value.byteLength, needed);
-              }
-              controller.enqueue(value);
-              position += value.byteLength;
-              chunkBytesRead += value.byteLength;
-            }
+          if (position === 0 && !getStartupCache(streamKey)) {
+            putStartupCache(streamKey, buf.slice(0, Math.min(buf.byteLength, PREWARM_BYTES)));
           }
 
-          if (collectForStartup && startupBytesCollected > 0) {
-            const merged = new Uint8Array(startupBytesCollected);
-            let offset = 0;
-            for (const piece of startupPieces) {
-              merged.set(piece, offset);
-              offset += piece.byteLength;
-            }
-            putStartupCache(streamKey, merged);
-          }
+          controller.enqueue(buf);
+          position += buf.byteLength;
 
-          // Guard against empty chunk loops (same as temp_koda's chunkProgressed check)
-          if (chunkBytesRead <= 0) {
-            break;
+          if (position > endByte && !cancelled) {
+            controller.close();
+          }
+        } catch (err) {
+          if (!cancelled) {
+            try {
+              controller.error(err);
+            } catch {}
           }
         }
-
-        if (!cancelled) {
-          controller.close();
-        }
-      } catch (err) {
-        if (!cancelled) {
+      },
+      cancel() {
+        cancelled = true;
+        if (activeAbortController) {
           try {
-            controller.error(err);
+            activeAbortController.abort();
           } catch {}
         }
       }
     },
-    cancel() {
-      cancelled = true;
-      if (activeAbortController) {
-        try {
-          activeAbortController.abort();
-        } catch {}
-      }
-    }
-  });
+    new CountQueuingStrategy({ highWaterMark: 2 })
+  );
 
   return new Response(stream, {
     status: 206,
@@ -274,7 +273,6 @@ async function handleChunkedStreamRequest(request, rawUrl) {
       'Accept-Ranges': 'bytes',
       'Content-Length': String(contentLength),
       'Content-Range': `bytes ${startByte}-${endByte}/${totalLength}`,
-      'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store'
     }
   });

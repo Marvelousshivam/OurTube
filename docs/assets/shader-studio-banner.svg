@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 185" width="100%">
+  <defs>
+    <linearGradient id="sh-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#171219"/>
+      <stop offset="50%" stop-color="#211820"/>
+      <stop offset="100%" stop-color="#191B24"/>
+    </linearGradient>
+    <style>
+      .font-sans { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect x="2" y="2" width="1196" height="181" rx="26" fill="url(#sh-bg)" stroke="#3B2E3B" stroke-width="1.5"/>
+
+  <!-- Header -->
+  <text x="36" y="36" class="font-mono" font-size="11" font-weight="700" fill="#D0BCFF" letter-spacing="1.4">KODA WEBGL2 VIDEO SHADER PIPELINE  •  60FPS FRAGMENT POST-PROCESSING</text>
+
+  <!-- Grade & Medium Shader Pills Row 1 -->
+  <g transform="translate(36, 54)">
+    <rect x="0" y="0" width="128" height="46" rx="14" fill="#2A202D" stroke="#4D3954"/>
+    <circle cx="24" cy="23" r="6" fill="#FFB1C8"/>
+    <text x="38" y="21" class="font-sans" font-size="12.5" font-weight="700" fill="#F5EBF7">Vivid &amp; HDR</text>
+    <text x="38" y="36" class="font-mono" font-size="9.5" fill="#A999B0">Midtone Clarity</text>
+
+    <rect x="140" y="0" width="136" height="46" rx="14" fill="#29221C" stroke="#524132"/>
+    <circle cx="164" cy="23" r="6" fill="#E9C16C"/>
+    <text x="178" y="21" class="font-sans" font-size="12.5" font-weight="700" fill="#F7EFE4">35mm Film</text>
+    <text x="178" y="36" class="font-mono" font-size="9.5" fill="#B5A492">Halation &amp; Grain</text>
+
+    <rect x="288" y="0" width="136" height="46" rx="14" fill="#1F242D" stroke="#3B4759"/>
+    <circle cx="312" cy="23" r="6" fill="#A8C7FA"/>
+    <text x="326" y="21" class="font-sans" font-size="12.5" font-weight="700" fill="#E8F0FE">Anime Cel</text>
+    <text x="326" y="36" class="font-mono" font-size="9.5" fill="#94A5BD">Sobel Line Art</text>
+
+    <rect x="436" y="0" width="136" height="46" rx="14" fill="#2B1D28" stroke="#593652"/>
+    <circle cx="460" cy="23" r="6" fill="#FF80AB"/>
+    <text x="474" y="21" class="font-sans" font-size="12.5" font-weight="700" fill="#FCE4EC">Cyber Neon</text>
+    <text x="474" y="36" class="font-mono" font-size="9.5" fill="#B897A8">Luma Split-Tone</text>
+
+    <rect x="584" y="0" width="136" height="46" rx="14" fill="#1E2B26" stroke="#365449"/>
+    <circle cx="608" cy="23" r="6" fill="#96F2D7"/>
+    <text x="622" y="21" class="font-sans" font-size="12.5" font-weight="700" fill="#E6FCF5">CRT &amp; VHS</text>
+    <text x="622" y="36" class="font-mono" font-size="9.5" fill="#8FB5A8">Phosphor Triad</text>
+
+    <rect x="732" y="0" width="144" height="46" rx="14" fill="#26222E" stroke="#4B415E"/>
+    <circle cx="756" cy="23" r="6" fill="#D0BCFF"/>
+    <text x="770" y="21" class="font-sans" font-size="12.5" font-weight="700" fill="#F3EDF7">Pixel &amp; Comic</text>
+    <text x="770" y="36" class="font-mono" font-size="9.5" fill="#A398B8">4x4 Bayer Dither</text>
+
+    <rect x="888" y="0" width="240" height="46" rx="14" fill="#2E2419" stroke="#664E32"/>
+    <circle cx="912" cy="23" r="6" fill="#FFE082"/>
+    <text x="926" y="21" class="font-sans" font-size="12.5" font-weight="800" fill="#FFE082">Custom GLSL Sandbox</text>
+    <text x="926" y="36" class="font-mono" font-size="9.5" fill="#C9B38F">uTex • uResolution • uTime</text>
+  </g>
+
+  <!-- SponsorBlock Timeline Bar Demo -->
+  <g transform="translate(36, 120)">
+    <text x="0" y="14" class="font-mono" font-size="10.5" font-weight="700" fill="#8CE99A" letter-spacing="1.2">SPONSORBLOCK PRIVACY-PRESERVING SHA-256 TIMELINE SEGMENTS</text>
+    <!-- Full Scrubber Track -->
+    <rect x="0" y="26" width="1128" height="10" rx="5" fill="#2E2730"/>
+    <!-- Played portion -->
+    <rect x="0" y="26" width="420" height="10" rx="5" fill="#E9C16C"/>
+    <!-- Intro segment (Cyan) -->
+    <rect x="65" y="26" width="48" height="10" fill="#00E5FF"/>
+    <!-- Sponsor segment (Green) -->
+    <rect x="280" y="26" width="95" height="10" fill="#00D400"/>
+    <!-- Self Promo (Yellow) -->
+    <rect x="560" y="26" width="64" height="10" fill="#FFD600"/>
+    <!-- Interaction (Purple) -->
+    <rect x="820" y="26" width="52" height="10" fill="#D500F9"/>
+    <!-- Outro (Blue) -->
+    <rect x="1040" y="26" width="88" height="10" rx="5" fill="#3B82F6"/>
+
+    <!-- Legend Vector Swatches -->
+    <rect x="478" y="6" width="8" height="8" rx="2.5" fill="#00E5FF"/>
+    <text x="491" y="14" class="font-mono" font-size="10" fill="#00E5FF">Intro</text>
+    <rect x="536" y="6" width="8" height="8" rx="2.5" fill="#00D400"/>
+    <text x="549" y="14" class="font-mono" font-size="10" fill="#00D400">Sponsor</text>
+    <rect x="612" y="6" width="8" height="8" rx="2.5" fill="#FFD600"/>
+    <text x="625" y="14" class="font-mono" font-size="10" fill="#FFD600">Self-Promo</text>
+    <rect x="706" y="6" width="8" height="8" rx="2.5" fill="#D500F9"/>
+    <text x="719" y="14" class="font-mono" font-size="10" fill="#D500F9">Reminder</text>
+    <rect x="790" y="6" width="8" height="8" rx="2.5" fill="#3B82F6"/>
+    <text x="803" y="14" class="font-mono" font-size="10" fill="#3B82F6">Outro / Credits</text>
+    <rect x="912" y="6" width="8" height="8" rx="2.5" fill="#FFB1C8"/>
+    <text x="925" y="14" class="font-mono" font-size="10" fill="#FFB1C8">Return YouTube Dislike</text>
+  </g>
+</svg>

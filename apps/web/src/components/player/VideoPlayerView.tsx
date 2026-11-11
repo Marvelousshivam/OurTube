@@ -1,72 +1,29 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { usePlayerStore } from '../../store/playerStore';
 import { VideoQuality } from '../../types';
+import { NativeVideoPlayerEngine } from '../video/NativeVideoPlayerEngine';
 
 export const VideoPlayerView: React.FC = () => {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const {
     currentTrack,
     streamVideoUrl,
     isPlaying,
-    volume,
-    isMuted,
     currentTime,
+    duration,
     videoQuality,
+    fitMode,
     togglePlay,
     seek,
     setVideoQuality,
-    updatePlaybackProgress,
-    setBuffering
+    toggleFitMode,
+    nextTrack
   } = usePlayerStore();
 
-  const [aspectRatio, setAspectRatio] = useState<'fit' | 'fill' | 'cover'>('fit');
   const [showControls, setShowControls] = useState(true);
   const [isQualityMenuOpen, setIsQualityMenuOpen] = useState(false);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Sync video source
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (streamVideoUrl) {
-      video.src = streamVideoUrl;
-      video.load();
-      if (isPlaying) {
-        video.play().catch((err) => console.warn('[Koda Video] Autoplay error:', err));
-      }
-    }
-  }, [streamVideoUrl]);
-
-  // Sync playback state
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (isPlaying) {
-      video.play().catch(() => {});
-    } else {
-      video.pause();
-    }
-  }, [isPlaying]);
-
-  // Sync volume & mute
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.volume = isMuted ? 0 : volume;
-  }, [volume, isMuted]);
-
-  // Sync seek
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (Math.abs(video.currentTime - currentTime) > 1.5) {
-      video.currentTime = currentTime;
-    }
-  }, [currentTime]);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseMove = () => {
     setShowControls(true);
@@ -85,8 +42,11 @@ export const VideoPlayerView: React.FC = () => {
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
-      } else if (videoRef.current) {
-        await videoRef.current.requestPictureInPicture();
+      } else {
+        const videoEl = containerRef.current?.querySelector('video');
+        if (videoEl) {
+          await videoEl.requestPictureInPicture();
+        }
       }
     } catch (err) {
       console.warn('[Koda Video] PiP failed:', err);
@@ -111,6 +71,7 @@ export const VideoPlayerView: React.FC = () => {
     <div
       ref={containerRef}
       onMouseMove={handleMouseMove}
+      onClick={togglePlay}
       style={{
         position: 'relative',
         width: '100%',
@@ -120,43 +81,57 @@ export const VideoPlayerView: React.FC = () => {
         backgroundColor: '#000',
         borderRadius: '24px',
         overflow: 'hidden',
-        boxShadow: '0 12px 48px rgba(0, 0, 0, 0.6)'
+        boxShadow: '0 12px 48px rgba(0, 0, 0, 0.6)',
+        cursor: 'pointer'
       }}
     >
       {streamVideoUrl ? (
-        <video
-          ref={videoRef}
-          onClick={togglePlay}
-          onTimeUpdate={() => {
-            if (videoRef.current) {
-              updatePlaybackProgress(videoRef.current.currentTime, videoRef.current.duration);
-            }
-          }}
-          onWaiting={() => setBuffering(true)}
-          onPlaying={() => setBuffering(false)}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: aspectRatio === 'fit' ? 'contain' : aspectRatio === 'cover' ? 'cover' : 'fill',
-            cursor: 'pointer'
-          }}
-        />
+        <NativeVideoPlayerEngine onEnded={() => nextTrack()} />
       ) : (
-        <iframe
-          src={`https://www.youtube-nocookie.com/embed/${currentTrack?.id}?autoplay=1&enablejsapi=1`}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
+        <div
           style={{
             width: '100%',
             height: '100%',
-            border: 'none',
-            display: 'block'
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            backgroundColor: '#09090d',
+            color: 'rgba(255, 255, 255, 0.78)'
           }}
-        />
+        >
+          {currentTrack?.thumbnailUrl && (
+            <img
+              src={currentTrack.highResThumbnailUrl || currentTrack.thumbnailUrl}
+              alt=""
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                filter: 'blur(28px) brightness(0.4)',
+                transform: 'scale(1.1)'
+              }}
+            />
+          )}
+          <span
+            className="material-symbols-rounded"
+            style={{ fontSize: '36px', position: 'relative', zIndex: 1, opacity: 0.85 }}
+          >
+            smart_display
+          </span>
+          <span style={{ fontSize: '13px', fontWeight: 600, position: 'relative', zIndex: 1 }}>
+            Resolving direct video stream...
+          </span>
+        </div>
       )}
 
       {/* Video Overlay Controls */}
       <div
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'absolute',
           bottom: 0,
@@ -169,14 +144,15 @@ export const VideoPlayerView: React.FC = () => {
           gap: '8px',
           opacity: showControls ? 1 : 0,
           pointerEvents: showControls ? 'auto' : 'none',
-          transition: 'opacity 250ms ease'
+          transition: 'opacity 250ms ease',
+          zIndex: 10
         }}
       >
         {/* Scrubber slider */}
         <input
           type="range"
           min={0}
-          max={videoRef.current?.duration || 100}
+          max={duration || 100}
           value={currentTime}
           onChange={(e) => seek(parseFloat(e.target.value))}
           style={{
@@ -207,8 +183,8 @@ export const VideoPlayerView: React.FC = () => {
             <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)' }}>
               {Math.floor(currentTime / 60)}:
               {Math.floor(currentTime % 60).toString().padStart(2, '0')} /{' '}
-              {Math.floor((videoRef.current?.duration || 0) / 60)}:
-              {Math.floor((videoRef.current?.duration || 0) % 60).toString().padStart(2, '0')}
+              {Math.floor((duration || 0) / 60)}:
+              {Math.floor((duration || 0) % 60).toString().padStart(2, '0')}
             </div>
           </div>
 
@@ -271,9 +247,7 @@ export const VideoPlayerView: React.FC = () => {
 
             {/* Aspect Ratio Toggle */}
             <button
-              onClick={() =>
-                setAspectRatio((prev) => (prev === 'fit' ? 'cover' : prev === 'cover' ? 'fill' : 'fit'))
-              }
+              onClick={toggleFitMode}
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -282,7 +256,7 @@ export const VideoPlayerView: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center'
               }}
-              title={`Aspect Ratio: ${aspectRatio}`}
+              title={`Aspect Ratio: ${fitMode}`}
             >
               <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
                 aspect_ratio

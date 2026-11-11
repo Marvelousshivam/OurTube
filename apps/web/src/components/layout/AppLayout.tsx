@@ -46,10 +46,12 @@ function parseRouteFromWindow(): {
   const hashParams = new URLSearchParams(hashQuery);
   const searchParams = new URLSearchParams(window.location.search);
 
-  const videoId =
+  const rawVideoId =
     hashParams.get('v') ||
     searchParams.get('v') ||
     (hashPath.startsWith('watch/') ? hashPath.slice('watch/'.length) : null);
+  const trimmedId = rawVideoId ? rawVideoId.trim() : null;
+  const videoId = trimmedId && /^[A-Za-z0-9_-]{11}$/.test(trimmedId) ? trimmedId : null;
 
   const rawTime = hashParams.get('t') || searchParams.get('t');
   let startTimeSec: number | null = null;

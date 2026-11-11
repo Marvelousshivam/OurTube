@@ -42,7 +42,9 @@ export interface LyricsLine {
 export interface LyricsData {
   synced: boolean;
   wordSynced?: boolean;
-  provider: 'lrc.red' | 'lrclib' | 'innertube' | 'local';
+  provider: string;
+  sourceId?: string;
+  label?: string;
   lines: LyricsLine[];
   ttml?: string;
 }
@@ -68,12 +70,9 @@ export interface YtAccount {
 
 export interface AuthState {
   isAuthenticated: boolean;
-  sapisid?: string;
-  sapisidHash?: string;
   accounts: YtAccount[];
   selectedChannelId?: string | null;
   selectedChannel?: YtChannel | null;
-  cookies?: Record<string, string>;
 }
 
 export interface SearchFilter {
