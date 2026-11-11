@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TrackMetadata, RepeatMode } from '../../../types';
 import { sizedArtwork, handleArtworkError } from '../../../api/artworkService';
 import { TopographicalWaveform } from '../TopographicalWaveform';
+import { usePlayerStore } from '../../../store/playerStore';
 
 interface BentoPlayerProps {
   track: TrackMetadata;
@@ -49,6 +50,8 @@ export const BentoPlayer: React.FC<BentoPlayerProps> = ({
   currentLyricPreview = null
 }) => {
   const [tilt, setTilt] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const activeStreamSpec = usePlayerStore((s) => s.activeStreamSpec);
+  const badgeLabel = activeStreamSpec?.shortBadgeText || activeStreamSpec?.badgeText || '256k AAC';
   const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (currentTime / duration) * 100)) : 0;
 
   const formatTime = (secs: number) => {
@@ -106,12 +109,13 @@ export const BentoPlayer: React.FC<BentoPlayerProps> = ({
             fontWeight: 800,
             padding: '3px 8px',
             borderRadius: '9999px',
-            backgroundColor: 'rgba(255,255,255,0.08)',
-            color: 'var(--md-sys-color-primary)',
+            backgroundColor: activeStreamSpec?.isLossless ? 'rgba(234, 179, 8, 0.16)' : 'rgba(255,255,255,0.08)',
+            border: activeStreamSpec?.isLossless ? '1px solid rgba(234, 179, 8, 0.45)' : 'none',
+            color: activeStreamSpec?.isLossless ? '#facc15' : 'var(--md-sys-color-primary)',
             flexShrink: 0
           }}
         >
-          256k AAC
+          {badgeLabel}
         </span>
       </div>
       <span

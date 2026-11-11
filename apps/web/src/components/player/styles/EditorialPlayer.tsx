@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TrackMetadata, RepeatMode } from '../../../types';
 import { SonicWaveformScrubber } from '../SonicWaveformScrubber';
 import { sizedArtwork, handleArtworkError } from '../../../api/artworkService';
+import { usePlayerStore } from '../../../store/playerStore';
 
 interface EditorialPlayerProps {
   track: TrackMetadata;
@@ -74,6 +75,8 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
   const [isSkippingNext, setIsSkippingNext] = useState(false);
   const [isSkippingPrev, setIsSkippingPrev] = useState(false);
   const [showPlayWave, setShowPlayWave] = useState(false);
+  const activeStreamSpec = usePlayerStore((s) => s.activeStreamSpec);
+  const badgeLabel = activeStreamSpec?.badgeText || '256k AAC • STUDIO';
 
   useEffect(() => {
     const code = track.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -388,6 +391,7 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
 
                 {/* Interactive Audio Quality / Nerd Specs Badge with Live Equalizer */}
                 <button
+                  type="button"
                   onClick={onOpenSpecs}
                   style={{
                     display: 'inline-flex',
@@ -395,9 +399,15 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                     gap: '6px',
                     padding: '4px 10px',
                     borderRadius: '9999px',
-                    backgroundColor: 'var(--md-sys-color-surface-container)',
-                    border: '1px solid var(--md-sys-color-outline-variant)',
-                    color: 'var(--md-sys-color-on-surface-variant)',
+                    backgroundColor: activeStreamSpec?.isLossless
+                      ? 'rgba(234, 179, 8, 0.16)'
+                      : 'var(--md-sys-color-surface-container)',
+                    border: activeStreamSpec?.isLossless
+                      ? '1px solid rgba(234, 179, 8, 0.45)'
+                      : '1px solid var(--md-sys-color-outline-variant)',
+                    color: activeStreamSpec?.isLossless
+                      ? '#facc15'
+                      : 'var(--md-sys-color-on-surface-variant)',
                     fontSize: '10px',
                     fontWeight: 800,
                     letterSpacing: '0.06em',
@@ -411,7 +421,7 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                       style={{
                         width: '2px',
                         height: isPlaying ? '9px' : '4px',
-                        backgroundColor: 'var(--md-sys-color-primary)',
+                        backgroundColor: activeStreamSpec?.isLossless ? '#facc15' : 'var(--md-sys-color-primary)',
                         borderRadius: '1px',
                         animation: isPlaying ? 'm3EqBar1 600ms ease-in-out infinite alternate' : 'none'
                       }}
@@ -420,7 +430,7 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                       style={{
                         width: '2px',
                         height: isPlaying ? '10px' : '6px',
-                        backgroundColor: 'var(--md-sys-color-primary)',
+                        backgroundColor: activeStreamSpec?.isLossless ? '#facc15' : 'var(--md-sys-color-primary)',
                         borderRadius: '1px',
                         animation: isPlaying ? 'm3EqBar2 480ms ease-in-out infinite alternate' : 'none'
                       }}
@@ -429,13 +439,13 @@ export const EditorialPlayer: React.FC<EditorialPlayerProps> = ({
                       style={{
                         width: '2px',
                         height: isPlaying ? '7px' : '3px',
-                        backgroundColor: 'var(--md-sys-color-primary)',
+                        backgroundColor: activeStreamSpec?.isLossless ? '#facc15' : 'var(--md-sys-color-primary)',
                         borderRadius: '1px',
                         animation: isPlaying ? 'm3EqBar3 540ms ease-in-out infinite alternate' : 'none'
                       }}
                     />
                   </span>
-                  256k AAC • STUDIO
+                  {badgeLabel}
                 </button>
               </div>
             </div>

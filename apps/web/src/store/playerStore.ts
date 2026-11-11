@@ -13,6 +13,8 @@ import {
 } from '../types';
 import { applyDynamicThemeFromImage } from '../theme/dynamicTheme';
 import { useTasteStore } from './tasteStore';
+import { useSettingsStore } from './settingsStore';
+import { resolveLosslessForTrack, type ResolvedLosslessStream } from '../api/losslessAddon';
 import {
   resolveStream,
   prefetchStream,
@@ -96,6 +98,19 @@ export function syncVideoWatchUrl(videoId: string | null): void {
   } catch {}
 }
 
+export interface StreamSpec {
+  isLossless: boolean;
+  badgeText: string;
+  shortBadgeText: string;
+  codec: string;
+  sampleRate?: number;
+  bitDepth?: number;
+  bitrateKbps?: number;
+  sourceName: string;
+  outputMode: 'WASAPI Exclusive (Bit-Perfect)' | 'Standard Shared Mixer';
+  dacDeviceName?: string;
+}
+
 interface PlayerState {
   currentTrack: TrackMetadata | null;
   isPlaying: boolean;
@@ -116,6 +131,9 @@ interface PlayerState {
   videoQuality: VideoQuality;
   streamAudioUrl: string | null;
   streamVideoUrl: string | null;
+  activeStreamSpec: StreamSpec | null;
+  fallbackAudioUrl: string | null;
+  setActiveStreamSpec: (spec: StreamSpec | null) => void;
   isExpanded: boolean;
   isLyricsOpen: boolean;
   isQueueOpen: boolean;
@@ -221,6 +239,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   videoQuality: (localStorage.getItem('koda_video_quality')?.replace(/"/g, '') as VideoQuality) || 'auto',
   streamAudioUrl: null,
   streamVideoUrl: null,
+  activeStreamSpec: null,
+  fallbackAudioUrl: null,
+  setActiveStreamSpec: (spec) => set({ activeStreamSpec: spec }),
   isExpanded: false,
   isLyricsOpen: false,
   isQueueOpen: false,
@@ -750,6 +771,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentTrack: resolvedTrack,
       streamAudioUrl: null,
       streamVideoUrl: null,
+      activeStreamSpec: null,
+      fallbackAudioUrl: null,
       lyricsData: null,
       isLyricsLoading: true,
       lyricsSourceStates: {},
@@ -779,26 +802,93 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       });
     }
 
-    // Resolve direct unencrypted stream URLs (AAC 140 / Opus 251)
+    // Resolve stream URLs: race lossless addon resolution if user has enabled extensions
     try {
       const mode = get().playbackMode;
-      const res = await resolveStream({
+      const settings = useSettingsStore.getState();
+      const hasEnabledAddons =
+        settings.losslessEnabled && settings.losslessAddons.some((a) => a.enabled);
+
+      const ytPromise = resolveStream({
         videoId: track.id,
         quality: get().videoQuality,
         mode
       });
+
+      const losslessPromise =
+        hasEnabledAddons && mode === 'music'
+          ? resolveLosslessForTrack(track, settings.losslessAddons, settings.rzZombieTracker)
+          : Promise.resolve(null);
+
+      const [res, losslessRes] = await Promise.all([ytPromise, losslessPromise]);
 
       // Discard out-of-order responses if superseded by a newer track selection
       if (reqToken !== activePlaybackToken) {
         return;
       }
 
-      if (res?.audioUrl) {
+      if (losslessRes?.url) {
+        const isDacBitPerfect =
+          settings.dacBitPerfectExclusive &&
+          typeof window !== 'undefined' &&
+          Boolean((window as any).__TAURI_INTERNALS__);
+
+        const sampleRate = losslessRes.sampleRate || 44100;
+        const bitDepth = losslessRes.bitDepth || 16;
+        const codec = losslessRes.codec || 'FLAC';
+        const rateKhz = (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1);
+
+        const badgeText = isDacBitPerfect
+          ? `${bitDepth}-BIT / ${rateKhz}KHZ ${codec} • BIT-PERFECT`
+          : `${bitDepth}-BIT / ${rateKhz}KHZ ${codec} • ${bitDepth >= 24 ? 'HI-RES' : 'LOSSLESS'}`;
+        const shortBadgeText = isDacBitPerfect
+          ? `${bitDepth}-BIT ${codec} • BIT-PERFECT`
+          : `${bitDepth}-BIT ${codec}`;
+
+        set({
+          streamAudioUrl: losslessRes.url,
+          fallbackAudioUrl: res?.audioUrl || null,
+          streamVideoUrl: null,
+          isPlaying: true,
+          isBuffering: false,
+          activeStreamSpec: {
+            isLossless: true,
+            badgeText,
+            shortBadgeText,
+            codec,
+            sampleRate,
+            bitDepth,
+            bitrateKbps: losslessRes.bitrateKbps,
+            sourceName: losslessRes.addonName,
+            outputMode: isDacBitPerfect ? 'WASAPI Exclusive (Bit-Perfect)' : 'Standard Shared Mixer'
+          }
+        });
+
+        // Record play into local taste profile
+        useTasteStore.getState().recordPlayback(resolvedTrack, 0.1);
+
+        // Pre-cache upcoming tracks
+        const { queue, queueIndex } = get();
+        const upcoming = queue.slice(queueIndex + 1, queueIndex + 4).map((e) => e.track);
+        if (upcoming.length > 0) {
+          get().preloadUpcomingTracks(upcoming);
+        }
+      } else if (res?.audioUrl) {
         set({
           streamAudioUrl: res.audioUrl,
+          fallbackAudioUrl: null,
           streamVideoUrl: res.videoUrl || null,
           isPlaying: true,
-          isBuffering: false
+          isBuffering: false,
+          activeStreamSpec: {
+            isLossless: false,
+            badgeText: '256k AAC • STUDIO',
+            shortBadgeText: '256k AAC',
+            codec: 'AAC',
+            bitrateKbps: 256,
+            sourceName: 'YouTube Music',
+            outputMode: 'Standard Shared Mixer'
+          }
         });
 
         // Record play into local taste profile once stream resolves

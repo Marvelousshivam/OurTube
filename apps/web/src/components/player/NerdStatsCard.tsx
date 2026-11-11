@@ -1,19 +1,34 @@
 import React, { useState } from 'react';
 import { TrackMetadata } from '../../types';
 import { usePlayerStore } from '../../store/playerStore';
+import { useSettingsStore } from '../../store/settingsStore';
 
 interface NerdStatsCardProps {
   track: TrackMetadata;
 }
 
+const isTauri = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+
 export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
-  const { streamAudioUrl, playbackMode, lyricsData } = usePlayerStore();
+  const { streamAudioUrl, activeStreamSpec, lyricsData } = usePlayerStore();
+  const { dacBitPerfectExclusive, setDacBitPerfectExclusive } = useSettingsStore();
   const [copied, setCopied] = useState(false);
 
   const isOpus = streamAudioUrl?.includes('opus') || streamAudioUrl?.includes('webm');
-  const codecName = isOpus ? 'Opus 251 (WebM)' : 'AAC-LC 140 (MP4)';
-  const bitrateStr = isOpus ? '160 kbps' : '256 kbps (HQ AAC)';
-  const sampleRate = '44.1 kHz · 16-bit Stereo';
+  const codecName = activeStreamSpec?.codec || (isOpus ? 'Opus 251 (WebM)' : 'AAC-LC 140 (MP4)');
+  const bitrateStr = activeStreamSpec?.bitrateKbps
+    ? `${activeStreamSpec.bitrateKbps} kbps`
+    : isOpus
+      ? '160 kbps'
+      : '256 kbps (HQ AAC)';
+
+  const sampleRate = activeStreamSpec?.sampleRate
+    ? `${(activeStreamSpec.sampleRate / 1000).toFixed(activeStreamSpec.sampleRate % 1000 === 0 ? 0 : 1)} kHz · ${activeStreamSpec.bitDepth || 16}-bit Stereo`
+    : '44.1 kHz · 16-bit Stereo';
+
+  const sourceName = activeStreamSpec?.sourceName || 'YouTube Music';
+  const outputMode = activeStreamSpec?.outputMode || 'Standard Shared Mixer';
+  const dacDevice = activeStreamSpec?.dacDeviceName || 'Windows Default Render Endpoint';
 
   const lyricsTimingStr = lyricsData?.wordSynced
     ? 'Word-by-word synced (Apple Music TTML)'
@@ -61,7 +76,10 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span
             className="material-symbols-rounded"
-            style={{ fontSize: '20px', color: 'var(--md-sys-color-primary)' }}
+            style={{
+              fontSize: '20px',
+              color: activeStreamSpec?.isLossless ? '#facc15' : 'var(--md-sys-color-primary)'
+            }}
           >
             tune
           </span>
@@ -82,12 +100,17 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
             fontWeight: 700,
             padding: '3px 10px',
             borderRadius: '9999px',
-            backgroundColor: 'rgba(255, 255, 255, 0.06)',
-            color: 'var(--md-sys-color-on-surface)',
+            backgroundColor: activeStreamSpec?.isLossless
+              ? 'rgba(234, 179, 8, 0.18)'
+              : 'rgba(255, 255, 255, 0.06)',
+            color: activeStreamSpec?.isLossless ? '#facc15' : 'var(--md-sys-color-on-surface)',
+            border: activeStreamSpec?.isLossless
+              ? '1px solid rgba(234, 179, 8, 0.45)'
+              : '1px solid transparent',
             letterSpacing: '0.04em'
           }}
         >
-          {codecName.split(' ')[0]}
+          {activeStreamSpec?.shortBadgeText || codecName.split(' ')[0]}
         </span>
       </div>
 
@@ -131,7 +154,7 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
           }}
         >
           <div style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)', fontWeight: 600 }}>
-            Audio Codec
+            Audio Codec & Stream
           </div>
           <div
             style={{
@@ -161,7 +184,8 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
               fontSize: '13px',
               fontWeight: 700,
               marginTop: '4px',
-              fontFamily: 'monospace'
+              fontFamily: 'monospace',
+              color: activeStreamSpec?.isLossless ? '#facc15' : 'inherit'
             }}
           >
             {sampleRate}
@@ -177,7 +201,7 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
           }}
         >
           <div style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)', fontWeight: 600 }}>
-            Track ID
+            Source Provider
           </div>
           <div
             style={{
@@ -189,7 +213,56 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
               textOverflow: 'ellipsis'
             }}
           >
-            {track.id}
+            {sourceName}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: '12px 14px',
+            borderRadius: '14px',
+            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.04)'
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)', fontWeight: 600 }}>
+            Output Architecture
+          </div>
+          <div
+            style={{
+              fontSize: '13px',
+              fontWeight: 700,
+              marginTop: '4px',
+              color: outputMode.includes('Exclusive') ? '#34d399' : 'inherit'
+            }}
+          >
+            {outputMode}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: '12px 14px',
+            borderRadius: '14px',
+            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.04)'
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)', fontWeight: 600 }}>
+            Hardware DAC Endpoint
+          </div>
+          <div
+            style={{
+              fontSize: '13px',
+              fontWeight: 700,
+              marginTop: '4px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}
+            title={dacDevice}
+          >
+            {dacDevice}
           </div>
         </div>
 
@@ -238,6 +311,47 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
           </div>
         </div>
       </div>
+
+      {/* Desktop WASAPI Bit-Perfect Quick Toggle */}
+      {isTauri && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 16px',
+            borderRadius: '14px',
+            backgroundColor: dacBitPerfectExclusive ? 'rgba(52, 211, 153, 0.08)' : 'rgba(255, 255, 255, 0.04)',
+            border: dacBitPerfectExclusive ? '1px solid rgba(52, 211, 153, 0.3)' : '1px solid rgba(255, 255, 255, 0.06)'
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700 }}>
+              DAC Bit-Perfect Exclusive Mode
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--md-sys-color-outline)' }}>
+              Locks hardware DAC sample rate & bit depth directly (bypasses Windows mixer)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDacBitPerfectExclusive(!dacBitPerfectExclusive)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '9999px',
+              border: 'none',
+              backgroundColor: dacBitPerfectExclusive ? '#10b981' : 'rgba(255, 255, 255, 0.1)',
+              color: dacBitPerfectExclusive ? '#022c22' : 'var(--md-sys-color-on-surface)',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
+              transition: 'all 150ms ease'
+            }}
+          >
+            {dacBitPerfectExclusive ? 'Active' : 'Off'}
+          </button>
+        </div>
+      )}
 
       {/* Copy Lyrics Action Button inside Specs */}
       {lyricsData && lyricsData.lines.length > 0 && (
@@ -290,7 +404,9 @@ export const NerdStatsCard: React.FC<NerdStatsCardProps> = ({ track }) => {
         <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>
           info
         </span>
-        Streamed via direct VisionOS unencrypted Google Video CDN with native byte-range audio decoding.
+        {activeStreamSpec?.isLossless
+          ? `Streamed in bit-perfect lossless FLAC via extension addon: ${activeStreamSpec.sourceName}.`
+          : 'Streamed via direct VisionOS unencrypted Google Video CDN with native byte-range audio decoding.'}
       </div>
     </div>
   );

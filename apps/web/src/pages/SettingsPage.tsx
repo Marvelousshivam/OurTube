@@ -24,6 +24,21 @@ import { APP_PALETTES, PaletteStyle } from '../theme/ColorPalettes';
 import { bridgeClient } from '../api/bridgeClient';
 import { discordPresenceManager } from '../api/discordPresence';
 import { AuthState, YtChannel } from '../types';
+import { invoke } from '@tauri-apps/api/core';
+import {
+  installLosslessAddon,
+  testLosslessAddon,
+  type LosslessAddonConfig
+} from '../api/losslessAddon';
+
+interface DacDeviceInfo {
+  deviceName: string;
+  sharedSampleRate: number;
+  sharedBits: number;
+  exclusiveSupported: boolean;
+  supportedRates: number[];
+  supportedBitDepths: number[];
+}
 
 export type SettingsTabId =
   | 'account'
@@ -109,6 +124,58 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
   const [isPinging, setIsPinging] = useState(false);
   const [isDiscordBusy, setIsDiscordBusy] = useState(false);
   const [discordError, setDiscordError] = useState<string | null>(null);
+
+  // Lossless Extensions & DAC State
+  const [addonUrlInput, setAddonUrlInput] = useState('');
+  const [addonInstallLoading, setAddonInstallLoading] = useState(false);
+  const [addonInstallMsg, setAddonInstallMsg] = useState<{ text: string; error: boolean } | null>(
+    null
+  );
+  const [testedAddonStatus, setTestedAddonStatus] = useState<Record<string, string>>({});
+  const [dacProbeLoading, setDacProbeLoading] = useState(false);
+  const [dacProbeInfo, setDacProbeInfo] = useState<DacDeviceInfo | null>(null);
+
+  const handleAddAddon = async () => {
+    if (!addonUrlInput.trim()) return;
+    setAddonInstallLoading(true);
+    setAddonInstallMsg(null);
+    try {
+      const addon = await installLosslessAddon(addonUrlInput.trim(), settings.rzZombieTracker);
+      settings.addLosslessAddon(addon);
+      setAddonUrlInput('');
+      setAddonInstallMsg({ text: `Installed "${addon.name}" successfully!`, error: false });
+      setTimeout(() => setAddonInstallMsg(null), 4000);
+    } catch (err: any) {
+      setAddonInstallMsg({ text: err?.message || 'Failed to install extension', error: true });
+    } finally {
+      setAddonInstallLoading(false);
+    }
+  };
+
+  const handleTestAddonItem = async (addon: LosslessAddonConfig) => {
+    setTestedAddonStatus((prev) => ({ ...prev, [addon.id]: 'Testing...' }));
+    const res = await testLosslessAddon(addon, settings.rzZombieTracker);
+    setTestedAddonStatus((prev) => ({ ...prev, [addon.id]: res.message }));
+    setTimeout(() => {
+      setTestedAddonStatus((prev) => {
+        const copy = { ...prev };
+        delete copy[addon.id];
+        return copy;
+      });
+    }, 5000);
+  };
+
+  const handleProbeDac = async () => {
+    setDacProbeLoading(true);
+    try {
+      const info = await invoke<DacDeviceInfo>('dac_probe_device');
+      setDacProbeInfo(info);
+    } catch (err: any) {
+      console.warn('DAC probe error:', err);
+    } finally {
+      setDacProbeLoading(false);
+    }
+  };
 
   const refreshStorage = () => {
     settings.getStorageEstimate().then(setStorageEstimate);
@@ -892,6 +959,440 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack, initialTab =
                   onChange={settings.setAudioNormalization}
                 />
               </SettingsCard>
+
+              <SettingsSectionHeader
+                title="Lossless Music Extensions"
+                subtitle="Universal Addon Manifest extensions provide bit-perfect studio FLAC streaming directly"
+              />
+              <SettingsCard>
+                <SettingsToggleRow
+                  icon="album"
+                  title="Lossless Extension Matching"
+                  subtitle="Search enabled addons for bit-perfect FLAC audio; seamlessly falls back to 256k AAC if unavailable"
+                  checked={settings.losslessEnabled}
+                  onChange={settings.setLosslessEnabled}
+                />
+
+                {settings.losslessEnabled && (
+                  <>
+                    <SettingsDivider />
+                    <div
+                      style={{
+                        padding: '16px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 700 }}>
+                          Add Extension Manifest
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                          Paste a Universal Addon Protocol manifest URL or personal ReZenOnance
+                          instance
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <input
+                          type="url"
+                          placeholder="e.g. https://rezenonance.onrender.com/manifest.json or /u/<slug>/manifest.json"
+                          value={addonUrlInput}
+                          onChange={(e) => setAddonUrlInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAddAddon();
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '10px 14px',
+                            borderRadius: '12px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid var(--md-sys-color-outline-variant)',
+                            color: 'var(--md-sys-color-on-surface)',
+                            fontSize: '13px',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddAddon}
+                          disabled={addonInstallLoading || !addonUrlInput.trim()}
+                          style={{
+                            padding: '10px 18px',
+                            borderRadius: '12px',
+                            backgroundColor: 'var(--md-sys-color-primary)',
+                            color: 'var(--md-sys-color-on-primary)',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            border: 'none',
+                            cursor:
+                              addonInstallLoading || !addonUrlInput.trim()
+                                ? 'not-allowed'
+                                : 'pointer',
+                            opacity: addonInstallLoading || !addonUrlInput.trim() ? 0.6 : 1,
+                            transition: 'all 150ms ease'
+                          }}
+                        >
+                          {addonInstallLoading ? 'Adding...' : 'Add Extension'}
+                        </button>
+                      </div>
+
+                      {addonInstallMsg && (
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: addonInstallMsg.error ? '#f87171' : '#4ade80'
+                          }}
+                        >
+                          {addonInstallMsg.text}
+                        </div>
+                      )}
+                    </div>
+
+                    <SettingsDivider />
+
+                    <div
+                      style={{
+                        padding: '16px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                      }}
+                    >
+                      <span style={{ fontSize: '13px', fontWeight: 700 }}>
+                        Configured Extensions
+                      </span>
+
+                      {settings.losslessAddons.length === 0 ? (
+                        <div
+                          style={{
+                            padding: '16px',
+                            borderRadius: '14px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px dashed var(--md-sys-color-outline-variant)',
+                            fontSize: '12px',
+                            color: 'var(--md-sys-color-outline)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px'
+                          }}
+                        >
+                          <span className="material-symbols-rounded" style={{ fontSize: '20px' }}>
+                            extension_off
+                          </span>
+                          No extensions configured yet. Paste a manifest URL above (such as your
+                          personal ReZenOnance endpoint) to enable lossless FLAC playback.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {settings.losslessAddons.map((addon) => (
+                            <div
+                              key={addon.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '12px 14px',
+                                borderRadius: '14px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                                border: '1px solid rgba(255, 255, 255, 0.06)'
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '2px',
+                                  overflow: 'hidden'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '13px', fontWeight: 700 }}>
+                                    {addon.name}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: '10px',
+                                      fontWeight: 700,
+                                      padding: '2px 6px',
+                                      borderRadius: '9999px',
+                                      backgroundColor: addon.enabled
+                                        ? 'rgba(52, 211, 153, 0.15)'
+                                        : 'rgba(255, 255, 255, 0.08)',
+                                      color: addon.enabled
+                                        ? '#34d399'
+                                        : 'var(--md-sys-color-outline)'
+                                    }}
+                                  >
+                                    v{addon.version} · {addon.enabled ? 'Enabled' : 'Paused'}
+                                  </span>
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    color: 'var(--md-sys-color-outline)',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                  title={addon.baseUrl}
+                                >
+                                  {testedAddonStatus[addon.id] || addon.baseUrl}
+                                </span>
+                              </div>
+
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  flexShrink: 0
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestAddonItem(addon)}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: '8px',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                                    color: 'var(--md-sys-color-on-surface)',
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    border: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Test
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => settings.toggleLosslessAddon(addon.id)}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: '8px',
+                                    backgroundColor: addon.enabled
+                                      ? 'rgba(52, 211, 153, 0.2)'
+                                      : 'rgba(255, 255, 255, 0.06)',
+                                    color: addon.enabled
+                                      ? '#34d399'
+                                      : 'var(--md-sys-color-outline)',
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    border: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {addon.enabled ? 'Active' : 'Enable'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => settings.removeLosslessAddon(addon.id)}
+                                  title="Remove extension"
+                                  style={{
+                                    padding: '6px',
+                                    borderRadius: '8px',
+                                    backgroundColor: 'transparent',
+                                    color: 'var(--md-sys-color-error)',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                >
+                                  <span
+                                    className="material-symbols-rounded"
+                                    style={{ fontSize: '18px' }}
+                                  >
+                                    delete
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </SettingsCard>
+
+              {isDesktopApp() && (
+                <>
+                  <SettingsSectionHeader
+                    title="DAC Bit-Perfect Playback (WASAPI Exclusive)"
+                    subtitle="Direct bit-exact hardware streaming bypassing the Windows Audio Engine mixer"
+                  />
+                  <SettingsCard>
+                    <SettingsToggleRow
+                      icon="speaker"
+                      title="WASAPI Exclusive Mode"
+                      subtitle="Locks your hardware DAC to the exact native track sample rate (44.1 - 192 kHz) and bit depth (16 / 24 / 32-bit)"
+                      checked={settings.dacBitPerfectExclusive}
+                      onChange={settings.setDacBitPerfectExclusive}
+                    />
+
+                    <SettingsDivider />
+
+                    <div
+                      style={{
+                        padding: '16px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '14px'
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700 }}>
+                            Hardware DAC Capability Probe
+                          </span>
+                          <span style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                            Inspect active audio render endpoint capabilities reported by Windows
+                            CoreAudio
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleProbeDac}
+                          disabled={dacProbeLoading}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                            color: 'var(--md-sys-color-on-surface)',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            cursor: dacProbeLoading ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {dacProbeLoading ? 'Probing...' : 'Probe Hardware DAC'}
+                        </button>
+                      </div>
+
+                      {dacProbeInfo && (
+                        <div
+                          style={{
+                            padding: '14px 16px',
+                            borderRadius: '14px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px'
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}
+                          >
+                            <span style={{ fontSize: '13px', fontWeight: 700 }}>
+                              {dacProbeInfo.deviceName}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: '9999px',
+                                backgroundColor: dacProbeInfo.exclusiveSupported
+                                  ? 'rgba(52, 211, 153, 0.15)'
+                                  : 'rgba(239, 68, 68, 0.15)',
+                                color: dacProbeInfo.exclusiveSupported ? '#34d399' : '#f87171'
+                              }}
+                            >
+                              {dacProbeInfo.exclusiveSupported
+                                ? 'WASAPI Exclusive Supported'
+                                : 'Shared Mode Only'}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: '12px', color: 'var(--md-sys-color-outline)' }}>
+                            Windows Shared Default:{' '}
+                            <strong style={{ color: 'var(--md-sys-color-on-surface)' }}>
+                              {(dacProbeInfo.sharedSampleRate / 1000).toFixed(0)} kHz ·{' '}
+                              {dacProbeInfo.sharedBits}-bit
+                            </strong>
+                          </div>
+
+                          {dacProbeInfo.supportedRates.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  color: 'var(--md-sys-color-outline)'
+                                }}
+                              >
+                                Supported Bit-Perfect Sample Rates:
+                              </span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {dacProbeInfo.supportedRates.map((r) => (
+                                  <span
+                                    key={r}
+                                    style={{
+                                      padding: '2px 8px',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                                      fontSize: '11px',
+                                      fontFamily: 'monospace',
+                                      fontWeight: 700
+                                    }}
+                                  >
+                                    {(r / 1000).toFixed(r % 1000 === 0 ? 0 : 1)} kHz
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {dacProbeInfo.supportedBitDepths.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  color: 'var(--md-sys-color-outline)'
+                                }}
+                              >
+                                Supported Bit Depths:
+                              </span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {dacProbeInfo.supportedBitDepths.map((b) => (
+                                  <span
+                                    key={b}
+                                    style={{
+                                      padding: '2px 8px',
+                                      borderRadius: '6px',
+                                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                                      fontSize: '11px',
+                                      fontFamily: 'monospace',
+                                      fontWeight: 700
+                                    }}
+                                  >
+                                    {b}-bit
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </SettingsCard>
+                </>
+              )}
 
               <SettingsSectionHeader
                 title="Playback Transitions & Queue"

@@ -3,6 +3,7 @@ import { PlayerStyle } from '../types';
 import { PaletteStyle, AppPalette, APP_PALETTES, applyPaletteTheme } from '../theme/ColorPalettes';
 import { usePlayerStore } from './playerStore';
 import { useTasteStore } from './tasteStore';
+import type { LosslessAddonConfig } from '../api/losslessAddon';
 
 export type ThemeMode = 'system' | 'light' | 'dark' | 'amoled';
 export type AudioStreamQuality = 'high' | 'normal' | 'saver';
@@ -35,6 +36,12 @@ export interface SettingsState {
   autoLoadQueue: boolean;
   saveListeningHistory: boolean;
   audioNormalization: boolean;
+
+  // Lossless Extensions & DAC Bit-Perfect
+  losslessEnabled: boolean;
+  losslessAddons: LosslessAddonConfig[];
+  dacBitPerfectExclusive: boolean;
+  rzZombieTracker: string;
 
   // Discord Rich Presence
   discordRpcEnabled: boolean;
@@ -78,6 +85,12 @@ export interface SettingsState {
   setAutoLoadQueue: (enabled: boolean) => void;
   setSaveListeningHistory: (enabled: boolean) => void;
   setAudioNormalization: (enabled: boolean) => void;
+
+  setLosslessEnabled: (enabled: boolean) => void;
+  addLosslessAddon: (addon: LosslessAddonConfig) => void;
+  removeLosslessAddon: (id: string) => void;
+  toggleLosslessAddon: (id: string) => void;
+  setDacBitPerfectExclusive: (enabled: boolean) => void;
 
   setDiscordRpcEnabled: (enabled: boolean) => void;
   setDiscordShowElapsed: (show: boolean) => void;
@@ -129,6 +142,22 @@ const setStored = <T>(key: string, value: T): void => {
   }
 };
 
+function getOrCreateTracker(): string {
+  if (typeof window === 'undefined') return '';
+  let token = localStorage.getItem('ourtube_rz_tracker');
+  if (!token || token.length < 32) {
+    const bytes = new Uint8Array(24);
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < 24; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    token = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem('ourtube_rz_tracker', token);
+  }
+  return token;
+}
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   // Appearance Defaults
   themeMode: getStored<ThemeMode>('koda_theme_mode', 'dark'),
@@ -148,6 +177,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   autoLoadQueue: getStored<boolean>('koda_auto_load_queue', true),
   saveListeningHistory: getStored<boolean>('koda_save_history', true),
   audioNormalization: getStored<boolean>('koda_audio_normalization', false),
+
+  // Lossless Extensions & DAC Bit-Perfect
+  losslessEnabled: getStored<boolean>('ourtube_lossless_enabled', true),
+  losslessAddons: getStored<LosslessAddonConfig[]>('ourtube_lossless_addons', []),
+  dacBitPerfectExclusive: getStored<boolean>('ourtube_dac_exclusive', false),
+  rzZombieTracker: getOrCreateTracker(),
 
   // Discord Defaults
   discordRpcEnabled: getStored<boolean>('koda_discord_rpc_enabled', true),
@@ -291,6 +326,35 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setAudioNormalization: (enabled: boolean) => {
     setStored('koda_audio_normalization', enabled);
     set({ audioNormalization: enabled });
+  },
+
+  setLosslessEnabled: (enabled: boolean) => {
+    setStored('ourtube_lossless_enabled', enabled);
+    set({ losslessEnabled: enabled });
+  },
+
+  addLosslessAddon: (addon: LosslessAddonConfig) => {
+    const list = get().losslessAddons.filter((a) => a.id !== addon.id);
+    const updated = [...list, addon];
+    setStored('ourtube_lossless_addons', updated);
+    set({ losslessAddons: updated });
+  },
+
+  removeLosslessAddon: (id: string) => {
+    const updated = get().losslessAddons.filter((a) => a.id !== id);
+    setStored('ourtube_lossless_addons', updated);
+    set({ losslessAddons: updated });
+  },
+
+  toggleLosslessAddon: (id: string) => {
+    const updated = get().losslessAddons.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
+    setStored('ourtube_lossless_addons', updated);
+    set({ losslessAddons: updated });
+  },
+
+  setDacBitPerfectExclusive: (enabled: boolean) => {
+    setStored('ourtube_dac_exclusive', enabled);
+    set({ dacBitPerfectExclusive: enabled });
   },
 
   // Discord Actions

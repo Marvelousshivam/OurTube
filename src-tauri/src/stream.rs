@@ -15,10 +15,34 @@
 //!    a shared connection-pooled HTTP client so googlevideo serves at full CDN
 //!    line speed.
 
+use std::collections::HashSet;
 use std::io::{self, Read};
 use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 static PORT: AtomicU16 = AtomicU16::new(0);
+
+static ALLOWED_URLS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn allowed_urls() -> &'static Mutex<HashSet<String>> {
+    ALLOWED_URLS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+#[tauri::command]
+pub fn allow_stream_url(url: String) {
+    if let Ok(mut set) = allowed_urls().lock() {
+        set.insert(url);
+    }
+}
+
+fn is_url_allowed(url: &str) -> bool {
+    if let Ok(set) = allowed_urls().lock() {
+        if set.contains(url) {
+            return true;
+        }
+    }
+    false
+}
 
 const FIRST_CHUNK_BYTES: u64 = 1536 * 1024; // 1.5 MB fast startup chunk
 const NEXT_CHUNK_BYTES: u64 = 2 * 1024 * 1024; // 2 MB steady-state chunk
@@ -206,7 +230,9 @@ fn handle(request: tiny_http::Request) {
         Err(_) => return respond_error(request, 400, "bad target url"),
     };
     let host = target_url.host_str().unwrap_or("");
-    if !(host == "googlevideo.com" || host.ends_with(".googlevideo.com")) {
+    let is_gv = host == "googlevideo.com" || host.ends_with(".googlevideo.com");
+    let is_allowed = is_gv || is_url_allowed(&target);
+    if !is_allowed {
         return respond_error(request, 403, "host not allowed");
     }
 

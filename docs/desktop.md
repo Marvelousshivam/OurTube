@@ -56,14 +56,14 @@ Phase 1 (this branch):
 - [x] CI workflow producing the Windows installer
 - [ ] Code signing + auto-updater
 
-Phase 2 (bit-perfect audio):
+Phase 2 (Lossless Extensions & DAC Bit-Perfect Playback):
 
-- The DAC-perfect goal needs a native audio engine (WASAPI exclusive mode).
-  Chrome-style webviews always go through the Windows mixer, which resamples.
-  The Rust stream server is the seam: media bytes already flow through Rust,
-  so decoding them and pushing PCM to a WASAPI-exclusive output is additive.
-- It also needs a genuinely lossless source - YouTube Music tops out around
-  256 kbps, so this pairs with a lossless-source extension.
+- [x] User-managed Lossless Music Extensions (`apps/web/src/api/losslessAddon.ts`, `src-tauri/src/addon.rs`) adhering to the Universal Addon Manifest protocol (ReZenOnance compatible) with personal endpoint device leasing (`X-Zombie-Tracker` / `__rz_tracker`)
+- [x] Zero pre-installed addons: user pastes their personal or public manifest URL in Settings
+- [x] Dynamic lossless matching with duration verification (`|delta| <= 8s`) and seamless fallback to YouTube 256k AAC when unavailable
+- [x] Native Rust DAC Bit-Perfect audio engine (`src-tauri/src/dac.rs`) using `symphonia` + `wasapi` in `StreamMode::EventsExclusive` (locking DAC to native 44.1 - 192 kHz @ 16/24/32-bit, bypassing the Windows Audio Engine mixer and resampler)
+- [x] Live hardware DAC capability probe & audio specs nerd card displaying DAC device name, output architecture, and sample resolution
+- [x] Dynamic player pills (`24-BIT / 96KHZ FLAC • BIT-PERFECT` / `HI-RES` / `256k AAC • STUDIO`) across Editorial and Bento player layouts
 
 ## Notes
 

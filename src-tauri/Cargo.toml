@@ -3,7 +3,7 @@ name = "ourtube"
 version = "1.0.0"
 description = "OurTube desktop - YouTube Music client"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.85"
 
 [lib]
 name = "ourtube_lib"
@@ -22,3 +22,6 @@ sha1 = "0.10"
 hex = "0.4"
 url = "2"
 tiny_http = "0.12"
+symphonia = { version = "0.5", default-features = false, features = ["flac", "pcm", "wav", "isomp4", "aac", "mp3", "ogg", "vorbis", "opt-simd"] }
+wasapi = "0.27"
+bytemuck = "1"
