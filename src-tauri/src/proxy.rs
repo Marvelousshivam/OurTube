@@ -87,7 +87,16 @@ fn do_fetch(payload: ProxyFetchPayload) -> Result<ProxyFetchResponse, String> {
     let is_innertube = payload.url.contains("/youtubei/");
     if is_innertube {
         // Anonymous session: always account index 0 (matches the extension's unsigned path).
-        parsed.query_pairs_mut().set_pair("authuser", "0");
+        let kept: Vec<(String, String)> = parsed
+            .query_pairs()
+            .filter(|(k, _)| k != "authuser")
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        parsed
+            .query_pairs_mut()
+            .clear()
+            .extend_pairs(kept)
+            .append_pair("authuser", "0");
     }
 
     let client = reqwest::blocking::Client::builder()
